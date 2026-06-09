@@ -417,8 +417,13 @@ void releaseInstructorLock();
 void addEvent(char* str);
 void addComment(char* str);
 void lockAndComment(char* str);
-void forceInstructorLock(void);
 void awrr_restart(void);
+
+#ifdef _WIN32
+void append_text_to_edit(const wchar_t* newText);
+void append_text_to_edit(char* buffer);
+std::wstring Utf8ToWstring(const std::string& utf8);
+#endif
 uint64_t msec_time_update(void);	// was ULONGLONG
 void initializeConfiguration(void);
 int getKeys(void);

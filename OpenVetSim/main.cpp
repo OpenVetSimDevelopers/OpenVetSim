@@ -328,19 +328,69 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 }
 
 HWND hButton, hCombo, hEdit, hList, hScroll, hStatic;
+static HFONT hLogFont;
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	PAINTSTRUCT ps;
 	HDC    hdc;
 	TCHAR  greeting[] = _T("Open VetSim Simulator System");
-	TCHAR  leaving[]  = _T("Closing WinVetSim Server");
 	TCHAR  buffer[128] = { 0, };
 
 	switch (message)
 	{
 	case WM_CREATE:
+	{
+		RECT rc;
+		GetClientRect(hWnd, &rc);
+		hEdit = CreateWindowExW(0, L"EDIT", NULL,
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
+			ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
+			0, 70, rc.right, rc.bottom - 70,
+			hWnd, NULL, (HINSTANCE)GetWindowLongPtrW(hWnd, GWLP_HINSTANCE), NULL);
+
+		hLogFont = CreateFontW(
+			-14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+			DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+			DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+		if (hLogFont)
+			SendMessageW(hEdit, WM_SETFONT, (WPARAM)hLogFont, TRUE);
 		break;
+	}
+
+	case WM_SIZE:
+	{
+		RECT rc;
+		GetClientRect(hWnd, &rc);
+		if (hEdit)
+			MoveWindow(hEdit, 0, 70, rc.right, rc.bottom - 70, TRUE);
+		break;
+	}
+
+	case WM_APP_LOG:
+	{
+		wchar_t* line = reinterpret_cast<wchar_t*>(lParam);
+		if (hEdit && line)
+		{
+			// Append line (O(1): move caret to end, replace selection)
+			int len = GetWindowTextLengthW(hEdit);
+			SendMessageW(hEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
+			SendMessageW(hEdit, EM_REPLACESEL, FALSE, (LPARAM)line);
+			SendMessageW(hEdit, EM_REPLACESEL, FALSE, (LPARAM)L"\r\n");
+			SendMessageW(hEdit, EM_SCROLLCARET, 0, 0);
+
+			// Cap line count to prevent unbounded growth
+			int lineCount = (int)SendMessageW(hEdit, EM_GETLINECOUNT, 0, 0);
+			if (lineCount > LOG_WINDOW_MAX_LINES)
+			{
+				int trimEnd = (int)SendMessageW(hEdit, EM_LINEINDEX, LOG_WINDOW_TRIM_LINES, 0);
+				SendMessageW(hEdit, EM_SETSEL, 0, (LPARAM)trimEnd);
+				SendMessageW(hEdit, EM_REPLACESEL, FALSE, (LPARAM)L"");
+			}
+		}
+		free(line);
+		return 0;
+	}
 
 	case WM_PAINT:
 		hdc = BeginPaint(hWnd, &ps);
@@ -359,9 +409,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_DESTROY:
-		hdc = BeginPaint(hWnd, &ps);
-		TextOut(hdc, 5, 5, leaving, (int)_tcslen(leaving));
-		EndPaint(hWnd, &ps);
+		if (hLogFont)
+		{
+			DeleteObject(hLogFont);
+			hLogFont = NULL;
+		}
 		stopPHPServer();
 		PostQuitMessage(0);
 		break;

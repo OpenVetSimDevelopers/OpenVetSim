@@ -19,7 +19,7 @@ recording via OBS (Open Broadcast Studio). It is distributed as:
 ## Repository Layout
 
 ```
-Claude OVS/                        ← repo root (also the Box/git working dir)
+Claude OVS/                        ← repo root (~/Documents/Claude OVS)
 ├── OpenVetSim/                    ← C++ simulation engine (CMake project)
 │   └── build/bin/
 │       ├── WinVetSim              ← compiled macOS binary (universal fat)
@@ -28,7 +28,12 @@ Claude OVS/                        ← repo root (also the Box/git working dir)
 ├── OpenVetSim-App/                ← Electron wrapper (Node.js)
 │   ├── main.js                    ← main process: spawns C++ binary, manages UI
 │   ├── package.json               ← electron-builder config, version number
-│   └── build/installer.nsh        ← NSIS hooks for Windows installer
+│   ├── build/
+│   │   ├── installer.nsh          ← NSIS hooks for Windows installer
+│   │   └── entitlements.mac.plist ← macOS hardened runtime entitlements
+│   └── scripts/
+│       ├── notarize.js            ← (legacy) custom notarization hook
+│       └── beforeSign.js          ← strips extended attributes before signing
 ├── sim-ii/                        ← PHP web app (simulation UI)
 ├── sim-mgr/                       ← PHP web app (scenario manager)
 ├── sim-ctl/                       ← PHP web app (control panel)
@@ -77,23 +82,47 @@ On macOS, `initUserData()` in `main.js` runs on every launch to:
 
 ## Building
 
+All build commands run from `~/Documents/Claude OVS/`.
+
 ### macOS
 
 ```bash
-# 1. Compile universal C++ binary (do this if WebSrv.cpp or other C++ changed)
-cd OpenVetSim/build
+# Set signing credentials (required — these are session-only, set each time)
+export APPLE_ID="djfletch42@gmail.com"
+export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export APPLE_TEAM_ID="29Q67RY9V7"
+
+# 1. Compile universal C++ binary (do this if any .cpp or .h files changed)
+cd ~/Documents/Claude\ OVS/OpenVetSim/build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 make -j$(sysctl -n hw.logicalcpu)
 
-# 2. Download universal PHP (run from non-university network — CDN blocked on campus)
+# 2. Download universal PHP (only needed if PHP version changes or first build on new machine)
+# Must run from non-university network — CDN blocked on campus
+cd ~/Documents/Claude\ OVS
 ./scripts/download-php.sh
-# Downloads arm64 + x86_64 static PHP from dl.static-php.dev and lipo's them together.
-# Must be re-run whenever PHP version changes or before first build on a new machine.
 
-# 3. Package DMG
-cd OpenVetSim-App
-npm run dist:mac
-# Produces: dist/OpenVetSim-1.x.x-universal.dmg
+# 3. Package signed DMG (caffeinate prevents sleep interrupting notarization)
+cd ~/Documents/Claude\ OVS/OpenVetSim-App
+caffeinate -i npm run dist:mac
+# Produces: dist/OpenVetSim-x.x.x-universal.dmg (signed but not yet notarized)
+
+# 4. Notarize (submit to Apple — takes 5-30 min, save the submission ID shown)
+xcrun notarytool submit dist/OpenVetSim-x.x.x-universal.dmg \
+  --apple-id "$APPLE_ID" \
+  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+  --team-id "$APPLE_TEAM_ID" \
+  --verbose \
+  --wait
+
+# 5. Check notarization status later if needed (use submission ID from step 4)
+xcrun notarytool info <submission-id> \
+  --apple-id "$APPLE_ID" \
+  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+  --team-id "$APPLE_TEAM_ID"
+
+# 6. Staple notarization ticket to DMG
+xcrun stapler staple dist/OpenVetSim-x.x.x-universal.dmg
 ```
 
 ### Windows
@@ -113,12 +142,26 @@ cmake --build . --config Release
 cd OpenVetSim-App
 npm install
 npm run dist:win
-# Produces: dist/OpenVetSim-1.x.x-Setup.exe
+# Produces: dist/OpenVetSim-x.x.x-Setup.exe
 ```
 
 ---
 
 ## Gotchas & Hard-Won Lessons
+
+### Keychain dialog during signing
+macOS may show a dialog "codesign wants to access key 'The RECOVER Initiative'"
+during the signing step. If the build hangs at "signing", check all windows and
+Spaces for this dialog — it can hide behind other apps. Click **"Always Allow"**
+(not just "Allow") so it doesn't repeat for every file.
+
+### Notarization hangs silently on university networks
+Apple's notarization endpoint (`notary-submissions.developer.apple.com`) may be
+blocked on university networks. Use `xcrun notarytool submit --wait` separately
+rather than electron-builder's built-in notarize, which hangs with no output.
+The `package.json` has `"notarize": false` — notarization is handled manually.
+Note: once submitted, notarization runs on Apple's servers; you can Ctrl+C the
+polling and check status later with `xcrun notarytool info <submission-id>`.
 
 ### PHP binary must be universal on macOS
 `@electron/universal` (used by `electron-builder --universal`) rejects single-arch
@@ -155,27 +198,43 @@ from the mac section — make sure `WinVetSim.exe` exists there before packaging
 
 ## Current Version
 
-**v1.2.0** — Universal macOS DMG + Windows installer
+**v2.5.0** — Collaborator C++ updates
 
 ### Release history
 - v1.0.0 — initial release (arm64 only)
 - v1.1.0 — OBS v5, Application Support paths, desktop shortcut (skipped in releases)
-- v1.2.0 — universal binary (arm64 + Intel), Copy Video Log Path menu item
+- v1.2.0 — universal binary (arm64 + Intel), Copy Video Log Path menu item, macOS code signing + notarization
+- v2.5.0 — collaborator C++ updates (VetSim, pulse, scenario, simstatus, and others)
 
 ---
 
 ## Pushing Releases to GitHub
 
 ```bash
-# macOS DMG
-gh release create v1.2.0 \
-  "OpenVetSim-App/dist/OpenVetSim-1.2.0-universal.dmg" \
-  --title "v1.2.0" \
+# Commit and push source changes
+cd ~/Documents/Claude\ OVS
+git add -p   # review and stage changes interactively
+git commit -m "Your message here"
+git push
+
+# Create a GitHub release with the notarized DMG
+gh release create v2.5.0 \
+  "OpenVetSim-App/dist/OpenVetSim-2.5.0-universal.dmg" \
+  --title "v2.5.0" \
   --notes "..."
 
 # Re-upload after a rebuild (overwrites existing asset)
-gh release upload v1.2.0 "dist/OpenVetSim-1.2.0-universal.dmg" --clobber
+gh release upload v2.5.0 "dist/OpenVetSim-2.5.0-universal.dmg" --clobber
 ```
+
+---
+
+## Apple Developer Credentials
+
+- **Apple ID**: djfletch42@gmail.com
+- **Team ID**: 29Q67RY9V7 (The RECOVER Initiative)
+- **Certificate**: Developer ID Application — installed in login Keychain
+- **App-Specific Password**: stored separately (generate at appleid.apple.com if expired)
 
 ---
 
@@ -183,6 +242,6 @@ gh release upload v1.2.0 "dist/OpenVetSim-1.2.0-universal.dmg" --clobber
 
 - Rename `WinVetSim` binary to `OpenVetSim` on both platforms
 - Migrate `simlogs/` to Application Support on Windows (currently in ProgramData)
-- Code signing / notarization for macOS (requires Apple Developer account)
+- Windows EV code signing certificate (applied for through Cornell IT)
 - iPad: not feasible with current architecture (no child process spawning on iOS);
   a future version could run the engine on a Mac/server and use iPad as a client

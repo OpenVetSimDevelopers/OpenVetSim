@@ -4,8 +4,16 @@
 #define LONG_STR_SIZE		128
 #define FILENAME_SIZE		256
 #define COMMENT_SIZE		1024
+#define LOG_BUF_SIZE		512
 #define LOG_TO_FILE			0
 #define MSG_LENGTH	2048
+
+// Windows-only: async log message posted from background threads to the UI thread
+#ifdef _WIN32
+#define WM_APP_LOG            (WM_APP + 1)
+#define LOG_WINDOW_MAX_LINES  500
+#define LOG_WINDOW_TRIM_LINES 100
+#endif
 
 // Port numbers should be configurable
 #define DEFAULT_PORT_PULSE			40844	// Note: If changed, must also change in SimController

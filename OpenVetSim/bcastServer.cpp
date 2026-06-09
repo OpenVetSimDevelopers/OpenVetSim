@@ -21,20 +21,26 @@
 */
 #include "vetsim.h"
 
+extern int closeFlag;
+
 int bcastReply(void)
 {
 	WSADATA wsaData;
-	WSAStartup(MAKEWORD(2, 2), &wsaData);
-	SOCKET sock;
-	sock = socket(AF_INET, SOCK_DGRAM, 0);
-	char broadcast = '1';
-	//     This option is needed on the socket in order to be able to receive broadcast messages
-	//   If not set the receiver will not receive broadcast messages in the local network.
-	if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0)
+	auto sts = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (sts != 0)
+	{
+		printf("WSAStartup returns %d\n", sts);
+		return (sts);
+	}
+
+	SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
+	int broadcast = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, (const char*)&broadcast, sizeof(broadcast)) < 0)
 	{
 		std::cout << "Error in setting Broadcast option";
 		closesocket(sock);
-		return 0;
+		WSACleanup();
+		return (-1);
 	}
 
 	struct sockaddr_in Recv_addr;
@@ -51,24 +57,44 @@ int bcastReply(void)
 	{
 		std::cout << "Error in BINDING" << WSAGetLastError();
 		closesocket(sock);
-		return 0;
+		WSACleanup();
+		return (-1);
 	}
+
+	// Wake up every second so the loop can check closeFlag
+#ifdef _WIN32
+	DWORD recvTimeout = 1000;
+	if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+		(const char*)&recvTimeout, sizeof(recvTimeout)) < 0)
+	{
+		std::cout << "Warning: SO_RCVTIMEO failed; shutdown may be delayed\n";
+	}
+#else
+	struct timeval tv;
+	tv.tv_sec = 1;
+	tv.tv_usec = 0;
+	setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
 
 	do
 	{
 		std::cout << "\nWaiting for message...\n";
 		memset(recvbuff, 0, sizeof(recvbuff));
-		recvfrom(sock, recvbuff, recvbufflen, 0, (sockaddr*)&Sender_addr, &len);
-		std::cout << "Received Message is: " << recvbuff;
-		if (strcmp("WVS_LOOK", recvbuff) == 0)
+		auto recv_sts = recvfrom(sock, recvbuff, recvbufflen, 0, (sockaddr*)&Sender_addr, &len);
+		if (recv_sts != SOCKET_ERROR)
 		{
-			inet_ntop(AF_INET, &(Sender_addr.sin_addr), recvbuff, INET_ADDRSTRLEN);
-			std::cout << " From " << recvbuff;
-			snprintf(recvbuff, sizeof(recvbuff), "%s", "WVS_FOUND");
-			ret = sendto(sock, recvbuff, (int)strlen(recvbuff), 0, (struct sockaddr*)&Sender_addr, len);
+			std::cout << "Received Message is: " << recvbuff;
+			if (strcmp("WVS_LOOK", recvbuff) == 0)
+			{
+				inet_ntop(AF_INET, &(Sender_addr.sin_addr), recvbuff, INET_ADDRSTRLEN);
+				std::cout << " From " << recvbuff;
+				snprintf(recvbuff, sizeof(recvbuff), "%s", "WVS_FOUND");
+				ret = sendto(sock, recvbuff, (int)strlen(recvbuff), 0, (struct sockaddr*)&Sender_addr, len);
+			}
 		}
-	} while (1);
+	} while (!closeFlag);
 
 	closesocket(sock);
 	WSACleanup();
+	return (0);
 }

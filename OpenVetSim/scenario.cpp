@@ -1065,12 +1065,16 @@ startScene(int sceneId)
 		fprintf(stderr, "Scene %d not found", sceneId);
 		printf("Scene %d not found", sceneId);
 		snprintf(s_msg, MAX_MSG_SIZE, "Scenario: Scene %d not found. Terminating.", sceneId);
-		snprintf(simmgr_shm->status.scenario.error_message, STR_SIZE, "Scenario: Scene %d not found. Terminating.", sceneId);
-		takeInstructorLock();
-		addComment(s_msg);
-		sprintf_s(simmgr_shm->instructor.scenario.state, NORMAL_STRING_SIZE, "%s", "Terminate");
-		sprintf_s(simmgr_shm->status.scenario.scene_name, LONG_STRING_SIZE, "%s", "");
-		releaseInstructorLock();
+		log_message("", s_msg);
+		snprintf(simmgr_shm->status.scenario.error_message, LONG_STR_SIZE, "Scenario: Scene %d not found. Terminating.", sceneId);
+		int sts = takeInstructorLock();
+		if (sts == 0)
+		{
+			addComment(s_msg);
+			sprintf_s(simmgr_shm->instructor.scenario.state, NORMAL_STRING_SIZE, "%s", "Terminate");
+			sprintf_s(simmgr_shm->status.scenario.scene_name, LONG_STRING_SIZE, "%s", "");
+			releaseInstructorLock();
+		}
 		return;
 	}
 	showScene(new_scene);

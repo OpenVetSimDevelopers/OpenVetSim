@@ -312,7 +312,7 @@ simmgrInitialize(void)
 	sprintf_s(simmgr_shm->status.scenario.active, STR_SIZE, "%s", "default");
 	sprintf_s(simmgr_shm->status.scenario.state, STR_SIZE, "%s", "Stopped");
 	simmgr_shm->status.scenario.record = 0;
-	sprintf_s(simmgr_shm->status.scenario.error_message, STR_SIZE, "%s", "");
+	sprintf_s(simmgr_shm->status.scenario.error_message, LONG_STR_SIZE, "%s", "");
 	simmgr_shm->status.scenario.error_flag = 0;
 
 	// instructor/sema
@@ -325,11 +325,16 @@ simmgrInitialize(void)
 	sprintf_s(simmgr_shm->instructor.scenario.active, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.scenario.state, STR_SIZE, "%s", "");
 	simmgr_shm->instructor.scenario.record = -1;
-	sprintf_s(simmgr_shm->instructor.scenario.error_message, STR_SIZE, "%s", "");
+	sprintf_s(simmgr_shm->instructor.scenario.error_message, LONG_STR_SIZE, "%s", "");
 	simmgr_shm->instructor.scenario.error_flag = -1;
 
 	// Log File
 	simmgr_shm->logfile.sema = sim_create_mutex();
+	if (!simmgr_shm->logfile.sema)
+	{
+		printf("CreateMutex error: %d\n", GetLastError());
+		exit(203);
+	}
 
 	simmgr_shm->logfile.active = 0;
 	sprintf_s(simmgr_shm->logfile.filename, FILENAME_SIZE, "%s", "");
@@ -1371,7 +1376,7 @@ scan_commands(void)
 	if (simmgr_shm->instructor.scenario.error_flag >= 0)
 	{
 		simmgr_shm->status.scenario.error_flag = simmgr_shm->instructor.scenario.error_flag;
-		snprintf(simmgr_shm->status.scenario.error_message, STR_SIZE, "%s", simmgr_shm->instructor.scenario.error_message);
+		snprintf(simmgr_shm->status.scenario.error_message, LONG_STR_SIZE, "%s", simmgr_shm->instructor.scenario.error_message);
 		simmgr_shm->instructor.scenario.error_flag = -1;
 	}
 	if (strlen(simmgr_shm->instructor.scenario.state) > 0)
@@ -1571,11 +1576,6 @@ scan_commands(void)
 	{
 		simmgr_shm->status.cardiac.pr_interval = simmgr_shm->instructor.cardiac.pr_interval;
 		simmgr_shm->instructor.cardiac.pr_interval = -1;
-	}
-	if (simmgr_shm->instructor.cardiac.qrs_interval >= 0)
-	{
-		simmgr_shm->status.cardiac.qrs_interval = simmgr_shm->instructor.cardiac.qrs_interval;
-		simmgr_shm->instructor.cardiac.qrs_interval = -1;
 	}
 	if (simmgr_shm->instructor.cardiac.qrs_interval >= 0)
 	{
@@ -2143,7 +2143,7 @@ start_scenario(void)
 		sts = recordStartStop(1);
 		if (sts != 0)
 		{
-			snprintf(simmgr_shm->status.scenario.error_message, STR_SIZE, "OBS not running: %s", "Start OBS or uncheck \"Start Video with Scenario\" box. Then start scenario.");
+			snprintf(simmgr_shm->status.scenario.error_message, LONG_STR_SIZE, "OBS not running: %s", "Start OBS or uncheck \"Start Video with Scenario\" box. Then start scenario.");
 			simmgr_shm->status.scenario.error_flag = 1;
 			updateScenarioState(ScenarioState::ScenarioStopped);
 		}
@@ -2159,7 +2159,7 @@ start_scenario(void)
 					if (cc == 'q' || cc == 'Q')
 					{
 						printf("Quit Waiting for Video File\n");
-						snprintf(simmgr_shm->status.scenario.error_message, STR_SIZE, "Failed to start recording: %s", "Quit Waiting for Video File");
+						snprintf(simmgr_shm->status.scenario.error_message, LONG_STR_SIZE, "Failed to start recording: %s", "Quit Waiting for Video File");
 						simmgr_shm->status.scenario.error_flag = 1;
 						updateScenarioState(ScenarioState::ScenarioStopped);
 						break;
@@ -2169,7 +2169,7 @@ start_scenario(void)
 				if (tryCount++ > OBS_START_WAIT_LOOPS)
 				{
 					log_message("", "timed out Waiting for Video File\n");
-					snprintf(simmgr_shm->status.scenario.error_message, STR_SIZE, "Failed to start recording: %s", "Timed Out Waiting for Video File");
+					snprintf(simmgr_shm->status.scenario.error_message, LONG_STR_SIZE, "Failed to start recording: %s", "Timed Out Waiting for Video File");
 					simmgr_shm->status.scenario.error_flag = 1;
 					updateScenarioState(ScenarioState::ScenarioStopped);
 					break;

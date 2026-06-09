@@ -106,34 +106,42 @@ log_message_init(void)
 	}
 
 	log_sema = sim_create_mutex();
+	if (!log_sema)
+	{
+		printf("CreateMutex error: %d\n", GetLastError());
+		exit(203);
+	}
 
 	log_message("", "Log Started");
 }
 
-// Windows-only: append text to the edit control in the GUI window
+// Windows-only: append text to the edit control in the GUI window (async via PostMessage)
 #ifdef _WIN32
 #ifdef NDEBUG
 extern HWND hEdit;
+extern HWND mainWindow;
 
 void append_text_to_edit(const wchar_t* newText)
 {
-	if (!hEdit) return;
+	if (!mainWindow || !newText) return;
 
-	int len = GetWindowTextLengthW(hEdit);
+	// Heap-copy so the UI thread owns it and will free() it after processing
+	wchar_t* copy = _wcsdup(newText);
+	if (!copy) return;
 
-	std::wstring buffer;
-	buffer.resize(len);
+	if (!PostMessageW(mainWindow, WM_APP_LOG, 0, (LPARAM)copy))
+		free(copy);
+}
 
-	if (len > 0)
-		GetWindowTextW(hEdit, &buffer[0], len + 1);
+void append_text_to_edit(char* buffer)
+{
+	if (!buffer) return;
 
-	buffer.append(newText);
-	buffer.append(L"\r\n");
-
-	SetWindowTextW(hEdit, buffer.c_str());
-
-	SendMessageW(hEdit, EM_SETSEL, buffer.length(), buffer.length());
-	SendMessageW(hEdit, EM_SCROLLCARET, 0, 0);
+	size_t convertedChars = 0;
+	wchar_t wcstring[LOG_BUF_SIZE];
+	errno_t err = mbstowcs_s(&convertedChars, wcstring, LOG_BUF_SIZE, buffer, _TRUNCATE);
+	if (!err)
+		append_text_to_edit(wcstring);
 }
 #endif // NDEBUG
 #endif // _WIN32
@@ -187,34 +195,8 @@ log_message(const char* filename, const char* message)
 
 #ifdef _WIN32
 #ifdef NDEBUG
-	// On Windows GUI build: push message to the edit control
-	{
-		size_t  origSize = strlen(message) + 1;
-		wchar_t wcstring[512 + 4];
-		size_t  convertedChars = 0;
-		mbstowcs_s(&convertedChars, wcstring, origSize, message, 512);
-		wcscat_s(wcstring, 516, L"\n");
-		append_text_to_edit(wcstring);
-
-		// Repaint the main window status line
-		extern HWND mainWindow;
-		PAINTSTRUCT ps;
-		HDC hdc = BeginPaint(mainWindow, &ps);
-		if (hdc)
-		{
-			HFONT hFont = (HFONT)GetStockObject(ANSI_VAR_FONT);
-			HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
-			if (hOldFont)
-			{
-				wchar_t wcstring2[512];
-				size_t  conv2 = 0;
-				mbstowcs_s(&conv2, wcstring2, origSize, message, 512);
-				TextOutW(hdc, 5, 40, wcstring2, (int)conv2);
-				SelectObject(hdc, hOldFont);
-			}
-			EndPaint(mainWindow, &ps);
-		}
-	}
+	// On Windows GUI build: push message asynchronously to the edit control
+	append_text_to_edit(const_cast<char*>(message));
 #endif // NDEBUG
 #endif // _WIN32
 
@@ -355,8 +337,16 @@ cleanString(char* strIn)
 int
 takeInstructorLock()
 {
+#ifdef _WIN32
+	DWORD sts = WaitForSingleObject(simmgr_shm->instructor.sema, 1000);
+	if (sts == WAIT_OBJECT_0)
+		return (0);
+	printf("WaitForSingleObject failed: %lu\n", GetLastError());
+	return (-1);
+#else
 	sim_lock_mutex(simmgr_shm->instructor.sema);
-	return 0;
+	return (0);
+#endif
 }
 
 void
@@ -366,7 +356,7 @@ releaseInstructorLock()
 }
 
 /*
- * addEvent / addComment / lockAndComment / forceInstructorLock
+ * addEvent / addComment / lockAndComment
  */
 void
 addEvent(char* str)
@@ -411,14 +401,6 @@ lockAndComment(char* str)
 		addComment(str);
 		releaseInstructorLock();
 	}
-}
-
-void
-forceInstructorLock(void)
-{
-	while (takeInstructorLock())
-		releaseInstructorLock();
-	releaseInstructorLock();
 }
 
 // ---- Windows-only error helpers ----

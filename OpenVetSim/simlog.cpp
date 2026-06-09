@@ -121,10 +121,9 @@ simlog_entry(char* msg)
 int
 simlog_open(int rw)
 {
-	int sts;
+	int sts = 0;
 	char buffer[512];
 	char errBuffer[256];
-	int trycount;
 
 	if (simlog_fd)
 	{
@@ -141,28 +140,17 @@ simlog_open(int rw)
 	if (rw == SIMLOG_MODE_WRITE || rw == SIMLOG_MODE_CREATE)
 	{
 		// Take the lock
-		trycount = 0;
-		while (trycount++ < 50)
+#ifdef _WIN32
+		sts = WaitForSingleObject(simmgr_shm->logfile.sema, 1000);
+		if (sts != WAIT_OBJECT_0)
 		{
-			sim_lock_mutex(simmgr_shm->logfile.sema);
-			sts = 0;
-			if (sts == 0)
-			{
-				break;
-			}
-			else
-			{
-				printf("simlog_open failed to take sema 0x%08xL\n", sts);
-				return (-3);
-			}
-		}
-		if (trycount >= 50)
-		{
-			// Could not get lock soon enough. Try again next time.
 			log_message("", "simlog_open failed to take logfile mutex");
 			printf("simlog_open failed to take logfile mutex\n");
 			return (-1);
 		}
+#else
+		sim_lock_mutex(simmgr_shm->logfile.sema);
+#endif
 		lock_held = 1;
 		if (rw == SIMLOG_MODE_CREATE)
 		{

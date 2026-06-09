@@ -159,7 +159,7 @@ extern void hrLogBeat(void);
 static void
 pulse_beat_handler(void)
 {
-	//pulseSema.lock();
+	pulseSema.lock();
 	if (currentPulseRate > 0)
 	{
 		if ((vpcType > 0) || (afibActive))
@@ -208,7 +208,8 @@ pulse_beat_handler(void)
 					}
 					else if ((vpcType > 0) && (currentVpcFreq > 0))
 					{
-						if (vpcFrequencyIndex++ >= VPC_ARRAY_LEN)
+						vpcFrequencyIndex++;
+						if (!(vpcFrequencyIndex < VPC_ARRAY_LEN))
 						{
 							vpcFrequencyIndex = 0;
 						}
@@ -236,7 +237,7 @@ pulse_beat_handler(void)
 			setPulseState(2);
 		}
 	}
-	//pulseSema.unlock();
+	pulseSema.unlock();
 }
 static void
 breath_beat_handler(void)
@@ -493,7 +494,7 @@ pulseTask(void )
 
 
 	// Seed rand, needed for vpc array generation
-	srand(NULL);
+	srand((unsigned)time(NULL));
 
 	currentPulseRate = simmgr_shm->status.cardiac.rate;
 	pulseSema.lock();
@@ -562,7 +563,14 @@ pulseTask(void )
 		return false;
 	}
 
-	listen(sfd, SOMAXCONN);
+	int listen_result = listen(sfd, SOMAXCONN);
+	if (listen_result == SOCKET_ERROR)
+	{
+		printf("Listen failed with error: %lu\n", WSAGetLastError());
+		closesocket(sfd);
+		WSACleanup();
+		return false;
+	}
 	socklen = sizeof(struct sockaddr_in);
 
 	while (1)
@@ -623,7 +631,7 @@ pulseTask(void )
 			}
 			if (found == 0)
 			{
-				for (i = 0; i < MAX_LISTENERS; i++)
+				for (i = 0; i < MAX_LISTENERS && found == 0; i++)
 				{
 					if (listeners[i].allocated == 0)
 					{
@@ -646,14 +654,13 @@ pulseTask(void )
 						// Send the Status Port Number to the listener
 						sendStatusPort(i);
 						getControllerVersion(i);
-						
+
 						found = 1;
-						break;
 					}
 				}
-               
+
 			}
-			if (i == MAX_LISTENERS)
+			if (found == 0)
 			{
 				// Unable to allocate
 				closesocket(cfd);

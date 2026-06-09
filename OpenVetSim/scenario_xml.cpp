@@ -104,12 +104,15 @@ struct scenario_event* new_event;
 void
 appendToParseLog(char* str)
 {
-	::std::wstring wideStr;
-	int convertResult = MultiByteToWideChar(CP_UTF8, 0, simmgr_shm->status.scenario.error_message, (int)strlen(simmgr_shm->status.scenario.error_message), NULL, 0);
+	int sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, str, -1, nullptr, 0);
+	if (sizeNeeded <= 0)
+		return;
+
+	std::wstring wideStr(sizeNeeded, 0);
+	int convertResult = MultiByteToWideChar(CP_UTF8, 0, str, -1, &wideStr[0], sizeNeeded);
 	if (convertResult > 0)
 	{
-		wideStr.resize(convertResult + 10);
-		convertResult = MultiByteToWideChar(CP_UTF8, 0, simmgr_shm->status.scenario.error_message, (int)strlen(simmgr_shm->status.scenario.error_message), &wideStr[0], (int)wideStr.size());
+		wideStr.resize(sizeNeeded - 1);  // remove null terminator included in sizeNeeded
 		parseLog.append(wideStr);
 	}
 }
@@ -342,7 +345,7 @@ showScenes()
 		}
 		e_snode = get_next_llist(e_snode);
 	}
-	return (NULL);
+	return (0);
 }
 
 /**
@@ -1248,6 +1251,7 @@ startParseState(int lvl, char* name)
 					//	printf("Trigger Group %d: Set Triggers Needed to %d\n", new_scene->triggers_needed);
 					//}
 				}
+				break;
 		}
 		break;
 	case 5:
@@ -1259,7 +1263,11 @@ startParseState(int lvl, char* name)
 
 				}
 				break;
+			default:
+				break;
 		}
+		break;
+
 	default:
 		break;
 	}

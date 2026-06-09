@@ -602,13 +602,22 @@ simstatusHandleCommand(char *args)
 			v = explode(key, ':');
 			sprintf_s(buffer, MSG_LENGTH, " \"set_%d\" : {\n    ", set_count);
 			htmlReply += buffer;
+			sts = 0;
+
+			if (v.size() != 3)
+			{
+				makejson("error", "bad set command");
+				htmlReply += ",\n    ";
+				sts = 3;
+			}
+			else
+			{
 			makejson("class", v[1]);
 			htmlReply += ",\n    ";
 			makejson("param", v[2]);
 			htmlReply += ",\n    ";
 			makejson("value", value);
 			htmlReply += ",\n    ";
-			sts = 0;
 
 			if (v[1].compare("cardiac") == 0)
 			{
@@ -790,6 +799,7 @@ simstatusHandleCommand(char *args)
 				makejson("status", "ok");
 			}
 			htmlReply += "\n    }";
+			}  // end else (v.size() == 3)
 		}
 		else
 		{
