@@ -141,13 +141,13 @@ cmake --build . --config Release
 # 2. Download PHP
 .\scripts\download-php.ps1
 
-# 3. Package and sign installer (signing is automatic via scripts/windowsSign.js)
+# 3. Package installer (unsigned)
 cd OpenVetSim-App
 npm install
 npm run dist:win
-# Produces: dist/OpenVetSim Setup x.x.x.exe  (signed, shows "Cornell University")
+# Produces: dist/OpenVetSim Setup x.x.x.exe  (unsigned)
 
-# If you need to re-sign manually after the fact:
+# 4. Sign the installer (insert YubiKey first — will prompt for PIN once)
 & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /sha1 e444aa88291629b6e931b518f42e0b2ce48ea7cb /fd sha256 /tr http://timestamp.sectigo.com /td sha256 "dist\OpenVetSim Setup x.x.x.exe"
 ```
 
@@ -206,9 +206,9 @@ The private key and certificate MUST be in the same slot. The original setup had
 private key in 9A and the cert in 9C — signing failed with "unexpected internal error"
 (0x80100014) until the cert was moved to 9A with `ykman piv certificates export/delete/import`.
 
-Signing is wired into `npm run dist:win` via `"sign": "scripts/windowsSign.js"` in
-`package.json`. The script calls signtool with thumbprint `e444aa88291629b6e931b518f42e0b2ce48ea7cb`.
-Windows will prompt for the YubiKey PIN during the build.
+Signing is done manually after the build with a single signtool command (see Windows
+build steps above). Wiring signing into electron-builder caused a PIN prompt for every
+bundled file — hundreds of prompts. Manual signing requires exactly one PIN entry.
 
 ### Windows PHP path
 The Windows PHP binary goes in `OpenVetSim/build/bin/PHP8.0/` (same as macOS).
