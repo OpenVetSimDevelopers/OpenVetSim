@@ -38,16 +38,16 @@ function getBinaryPath() {
 //
 //   Packaged Mac:     ~/Library/Application Support/OpenVetSim/
 //                     (writable; populated from bundle by initUserData() on each launch)
-//   Packaged Windows: %PROGRAMDATA%\OpenVetSim (shared across all users on the machine;
-//                     the NSIS installer copies web files and scenarios here)
+//   Packaged Windows: %PUBLIC%\OpenVetSim (C:\Users\Public\OpenVetSim — shared across
+//                     all users on the machine; the NSIS installer copies web files here)
 //   Development:      repo root (parent of OpenVetSim-App/) — sim-ii, sim-mgr etc. live there
 //
 function getHtmlPath() {
   if (app.isPackaged) {
     if (process.platform === 'win32') {
-      // %PROGRAMDATA% is C:\ProgramData — shared, writable by all Windows users.
+      // %PUBLIC% is C:\Users\Public — shared, accessible to all Windows users.
       // The NSIS installer is responsible for populating OpenVetSim\ here.
-      return path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'OpenVetSim');
+      return path.join(process.env.PUBLIC || 'C:\\Users\\Public', 'OpenVetSim');
     }
     // macOS: Application Support is writable, so users can add scenarios and
     // simlogs (including video files) can grow freely.
@@ -92,7 +92,7 @@ async function stripReadOnly(dirPath) {
 //   simlogs/video/             — created if missing; never touched otherwise.
 //
 // macOS:   ~/Library/Application Support/OpenVetSim/
-// Windows: C:\ProgramData\OpenVetSim\  (the NSIS installer also xcopy's these
+// Windows: C:\Users\Public\OpenVetSim\  (the NSIS installer also xcopy's these
 //          files there, but we do it here too so launches always succeed even
 //          if the installer's xcopy failed silently on a particular machine).
 //

@@ -99,6 +99,7 @@
         }
       ],
       "icon": "assets/icon.ico",
+      "sign": "scripts/windowsSign.js",
       "extraResources": [
         {
           "from": "../OpenVetSim/build/bin/WinVetSim.exe",

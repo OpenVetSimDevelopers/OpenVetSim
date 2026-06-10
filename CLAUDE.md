@@ -33,7 +33,8 @@ Claude OVS/                        ← repo root (~/Documents/Claude OVS)
 │   │   └── entitlements.mac.plist ← macOS hardened runtime entitlements
 │   └── scripts/
 │       ├── notarize.js            ← (legacy) custom notarization hook
-│       └── beforeSign.js          ← strips extended attributes before signing
+│       ├── beforeSign.js          ← strips extended attributes before signing (macOS)
+│       └── windowsSign.js         ← calls signtool with EV cert on YubiKey (Windows)
 ├── sim-ii/                        ← PHP web app (simulation UI)
 ├── sim-mgr/                       ← PHP web app (scenario manager)
 ├── sim-ctl/                       ← PHP web app (control panel)
@@ -69,7 +70,7 @@ Electron (main.js)
 | Platform | Web root / scenarios / simlogs |
 |----------|-------------------------------|
 | macOS (packaged) | `~/Library/Application Support/OpenVetSim/` |
-| Windows (packaged) | `C:\ProgramData\OpenVetSim\` |
+| Windows (packaged) | `C:\Users\Public\OpenVetSim\` |
 | Dev (both) | repo root (parent of `OpenVetSim-App/`) |
 
 On macOS, `initUserData()` in `main.js` runs on every launch to:
@@ -128,6 +129,8 @@ xcrun stapler staple dist/OpenVetSim-x.x.x-universal.dmg
 ### Windows
 
 ```powershell
+# 0. Insert YubiKey 5C NFC FIPS before building — signing will prompt for PIN
+
 # 1. Compile C++ binary (requires Visual Studio with C++ workload + CMake)
 cd OpenVetSim
 mkdir build; cd build
@@ -138,11 +141,14 @@ cmake --build . --config Release
 # 2. Download PHP
 .\scripts\download-php.ps1
 
-# 3. Package installer
+# 3. Package and sign installer (signing is automatic via scripts/windowsSign.js)
 cd OpenVetSim-App
 npm install
 npm run dist:win
-# Produces: dist/OpenVetSim-x.x.x-Setup.exe
+# Produces: dist/OpenVetSim Setup x.x.x.exe  (signed, shows "Cornell University")
+
+# If you need to re-sign manually after the fact:
+& "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /sha1 e444aa88291629b6e931b518f42e0b2ce48ea7cb /fd sha256 /tr http://timestamp.sectigo.com /td sha256 "dist\OpenVetSim Setup x.x.x.exe"
 ```
 
 ---
@@ -188,6 +194,21 @@ The codebase uses `obs-websocket-5.js`, port 4455, `obs.connect()` / `obs.call()
 and command names `StartRecord` / `StopRecord`. The old v4 plugin (port 4444) is
 no longer supported. Users must enable the WebSocket server in OBS under
 Tools → WebSocket Server Settings.
+
+### Windows EV signing with YubiKey
+Signing requires a Sectigo EV certificate on a YubiKey 5C NFC FIPS hardware token.
+Prerequisites on the Windows build machine:
+- **YubiKey Smart Card Minidriver** installed (makes Windows recognize the YubiKey as a smart card)
+- **YubiKey Manager CLI** (`ykman`) installed
+- Certificate **and** private key both in PIV **slot 9A** (Authentication)
+
+The private key and certificate MUST be in the same slot. The original setup had the
+private key in 9A and the cert in 9C — signing failed with "unexpected internal error"
+(0x80100014) until the cert was moved to 9A with `ykman piv certificates export/delete/import`.
+
+Signing is wired into `npm run dist:win` via `"sign": "scripts/windowsSign.js"` in
+`package.json`. The script calls signtool with thumbprint `e444aa88291629b6e931b518f42e0b2ce48ea7cb`.
+Windows will prompt for the YubiKey PIN during the build.
 
 ### Windows PHP path
 The Windows PHP binary goes in `OpenVetSim/build/bin/PHP8.0/` (same as macOS).
@@ -241,7 +262,5 @@ gh release upload v2.5.0 "dist/OpenVetSim-2.5.0-universal.dmg" --clobber
 ## Deferred / Future Work
 
 - Rename `WinVetSim` binary to `OpenVetSim` on both platforms
-- Migrate `simlogs/` to Application Support on Windows (currently in ProgramData)
-- Windows EV code signing certificate (applied for through Cornell IT)
 - iPad: not feasible with current architecture (no child process spawning on iOS);
   a future version could run the engine on a Mac/server and use iPad as a client
