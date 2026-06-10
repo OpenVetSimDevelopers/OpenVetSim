@@ -2,6 +2,8 @@ const { execSync } = require('child_process');
 const path = require('path');
 
 exports.default = async function afterPack(context) {
+  if (process.platform !== 'darwin') return;
+
   const { appOutDir, packager } = context;
   const appName = packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
