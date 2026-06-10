@@ -12,6 +12,16 @@ const TIMESTAMP_URL = 'http://timestamp.sectigo.com';
 
 exports.default = async function sign(configuration) {
   const filePath = configuration.path;
+
+  // Only sign .exe files. electron-builder calls this hook for every bundled
+  // file including .dll libraries, which would require a YubiKey PIN prompt
+  // for each one. Signing only .exe files covers the main app, the C++ binary,
+  // and the final installer — the files that matter for SmartScreen trust.
+  if (!filePath.endsWith('.exe')) {
+    console.log(`Skipping (not .exe): ${path.basename(filePath)}`);
+    return;
+  }
+
   console.log(`Signing ${path.basename(filePath)}...`);
 
   const cmd = [
