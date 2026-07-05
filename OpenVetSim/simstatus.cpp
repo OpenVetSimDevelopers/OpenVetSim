@@ -1248,6 +1248,8 @@ sendStatus(void)
 	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.respiration.etco2));
 	makejson("etco2", buffer);
 	htmlReply += ",\n";
+	makejson("co2_waveform", simmgr_shm->status.respiration.co2_waveform);
+	htmlReply += ",\n";
 	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.respiration.rate));
 	makejson("rate", buffer);
 	htmlReply += ",\n";

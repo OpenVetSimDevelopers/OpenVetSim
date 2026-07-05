@@ -393,6 +393,62 @@ See gpl.html
 			});
 		},
 		
+		respRhythm: function() {
+			$.ajax({
+				url: BROWSER_AJAX + 'ajaxGetEtCO2WaveformContent.php',
+				type: 'post',
+				async: false,
+				data: {
+					currentWaveform: (controls.etCO2 && controls.etCO2.waveformType) ? controls.etCO2.waveformType : 'normal'
+				},
+				dataType: 'json',
+				success: function(response) {
+					if(response.status == AJAX_STATUS_OK) {
+						modal.showModal(response);
+						modal.bindCloseModal();
+
+						modal.initSingleSlider('etCO2');
+
+						$('.strip-value').val(controls.etCO2.value);
+
+						// bind apply button
+						$('.modal-button.apply').click(function() {
+							var waveform = $('select.co2-waveform-select option:selected').val();
+							var etco2val = $('.strip-value.new').val();
+							var transferTime = $('.transfer-time option:selected').val();
+
+							simmgr.sendChange({
+								'set:respiration:co2_waveform': waveform,
+								'set:respiration:etco2': etco2val,
+								'set:respiration:transfer_time': transferTime
+							});
+							modal.closeModal();
+						});
+
+						// bind change in new value
+						$('.strip-value.new').change(controls.etCO2.validateNewValue);
+
+						// bind increment and decrement
+						$('.control-incr-decr-rate.decr-rate').click(function() {
+							$('.strip-value.new').val(parseInt($('.strip-value.new').val()) - 1);
+							controls.etCO2.validateNewValue();
+						});
+						$('.control-incr-decr-rate.incr-rate').click(function() {
+							$('.strip-value.new').val(parseInt($('.strip-value.new').val()) + 1);
+							controls.etCO2.validateNewValue();
+						});
+
+						// bind change of slider
+						controls.etCO2.slideBar.slider({
+							slide: function( sliderEvent, sliderUI ) {
+								$('.strip-value.new').val( sliderUI.value );
+							}
+						});
+					}
+				}
+			});
+		},
+
 		Tperi: function() {
 			$.ajax({
 				url: BROWSER_AJAX + 'ajaxGetTperiControlContent.php',

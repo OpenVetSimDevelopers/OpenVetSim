@@ -818,6 +818,11 @@ if( profile.isVitalsMonitor ) {
 						}
 					}
 					
+					// co2 waveform type
+					if(typeof(response.respiration.co2_waveform) != "undefined" && response.respiration.co2_waveform !== "") {
+						controls.etCO2.waveformType = response.respiration.co2_waveform;
+					}
+
 					// etco2 indicator
 					if(typeof(response.respiration.etco2_indicator) != "undefined") {
 						var changed = false;

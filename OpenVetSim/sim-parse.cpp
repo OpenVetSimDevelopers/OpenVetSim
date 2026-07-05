@@ -279,6 +279,10 @@ respiration_parse(const char* elem, const char* value, struct respiration* resp)
 	{
 		resp->etco2 = atoi(value);
 	}
+	else if (strcmp(elem, "co2_waveform") == 0)
+	{
+		sprintf_s(resp->co2_waveform, STR_SIZE, "%s", value);
+	}
 	else if (strcmp(elem, "transfer_time") == 0)
 	{
 		resp->transfer_time = atoi(value);

@@ -771,10 +771,16 @@ See gpl.html
 			chart.resp.rhythm['high'][3] = [	
 				56,62
 			];
-			chart.resp.rhythm['high'][4] = [	
+			chart.resp.rhythm['high'][4] = [
 				56,62
 			];
-			
+
+			// Curare cleft: normalized amplitude profile (0=baseline, 1=peak) applied to the
+			// plateau phase when waveformType === 'curare'. The dip at roughly the mid-plateau
+			// represents diaphragmatic effort against the ventilator (light anesthesia or
+			// insufficient neuromuscular blockade).
+			chart.resp.rhythm['cleft'] = [1.0, 1.0, 1.0, 0.95, 0.83, 0.76, 0.76, 0.83, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0];
+
 			chart.resp.manualBreathPattern = [	// approximate 300 msec waveform
 				0.110304233,0.110304233,0.110304233,0.110304233,0.110304233,
 				0.110304233,0.110304233,0.110304233,0.110304233,0.110304233,
@@ -1227,8 +1233,44 @@ See gpl.html
 					y = 0;
 				} else {
 					//scale the y value to the current ETCO2
-					chart.resp.currentetCO2value = controls.etCO2.value
-					y = chart.resp.manualBreathPattern[controls.manualRespiration.manualBreathIndex] * -1 * chart.resp.currentetCO2value / controls.etCO2.maxValue;
+					chart.resp.currentetCO2value = controls.etCO2.value;
+					var _midx = controls.manualRespiration.manualBreathIndex;
+					var _rawVal = chart.resp.manualBreathPattern[_midx];
+					var _mPeakVal = 61.55049417;		// max of manualBreathPattern (index 50)
+					var _mScaleFactor = chart.resp.currentetCO2value / controls.etCO2.maxValue;
+					var _wt_m = (controls.etCO2 && controls.etCO2.waveformType) ? controls.etCO2.waveformType : 'normal';
+
+					if(_wt_m === 'obstructive') {
+						// Shark fin: CO2 rises linearly from 0 to peak across the full
+						// exhalation phase (indices 11-50), then uses the original falling tail.
+						var _mRiseStart = 11, _mPeakIdx = 50;
+						if(_midx >= _mRiseStart && _midx <= _mPeakIdx) {
+							var _mProg = (_midx - _mRiseStart) / (_mPeakIdx - _mRiseStart);
+							_rawVal = _mPeakVal * _mProg;
+						}
+						y = _rawVal * -1 * _mScaleFactor;
+					} else if(_wt_m === 'curare') {
+						// Curare cleft: apply plateau notch modulation to the plateau region.
+						var _mPlatStart = 21, _mPlatEnd = 50;
+						if(_midx >= _mPlatStart && _midx <= _mPlatEnd) {
+							var _mProg = (_midx - _mPlatStart) / (_mPlatEnd - _mPlatStart);
+							var _cleftArr = chart.resp.rhythm['cleft'];
+							var _mCi = Math.min(Math.round(_mProg * (_cleftArr.length - 1)), _cleftArr.length - 1);
+							_rawVal = _mPeakVal * _cleftArr[_mCi];
+						}
+						y = _rawVal * -1 * _mScaleFactor;
+					} else {
+						// Normal: use pattern as-is
+						y = _rawVal * -1 * _mScaleFactor;
+					}
+
+					// Rebreathing: elevated baseline floor — applies regardless of other waveform shape
+					if(_wt_m === 'rebreathing') {
+						var _mPeakScaled = _mPeakVal * _mScaleFactor;
+						var _mRebreathFloor = -(_mPeakScaled * 0.25);
+						if(y > _mRebreathFloor) { y = _mRebreathFloor; }
+					}
+
 //console.log("manual breath: " + y);
 					// advance to the next point in the waveform
 					controls.manualRespiration.manualBreathIndex++;
@@ -1286,8 +1328,18 @@ See gpl.html
 					} else {
 						y = chart.resp.rhythm[chart.resp.rhythmIndex][chart.resp.patternIndex] * -1;
 					}
+
+					// Rebreathing floor: apply here too — the synch frame draws y=0 (rhythm['low'][0])
+					// which would otherwise escape the clamp in the else-branch below.
+					if((controls.etCO2 && controls.etCO2.waveformType) === 'rebreathing') {
+						var _syncPeakScaled = chart.resp.rhythm['high'][chart.resp.risePatternIndex][1] * chart.resp.currentetCO2value / controls.etCO2.maxValue;
+						var _syncRebreathFloor = -(_syncPeakScaled * 0.25);
+						if(y > _syncRebreathFloor) { y = _syncRebreathFloor; }
+					}
 				}
 				else {
+					var _wt = (controls.etCO2 && controls.etCO2.waveformType) ? controls.etCO2.waveformType : 'normal';
+
 					if(chart.resp.rhythmIndex == 'low-to-high') {
 						y = chart.resp.rhythm[chart.resp.rhythmIndex][chart.resp.risePatternIndex][chart.resp.patternIndex] * -1 * chart.resp.rhythm['high'][chart.resp.risePatternIndex][0]/52;
 					} else if(chart.resp.rhythmIndex == 'high-to-low'){
@@ -1295,14 +1347,35 @@ See gpl.html
 					} else if(chart.resp.rhythmIndex == 'low' || chart.resp.rhythmIndex == 'rest'){
 						y = chart.resp.rhythm[chart.resp.rhythmIndex][0] * -1;
 					} else if (chart.resp.rhythmIndex == 'high'){
-						y = -1* (chart.resp.rhythm[chart.resp.rhythmIndex][chart.resp.risePatternIndex][0] + ((chart.resp.patternIndex/(chart.resp.length-1)) * (chart.resp.rhythm[chart.resp.rhythmIndex][chart.resp.risePatternIndex][1]-chart.resp.rhythm[chart.resp.rhythmIndex][chart.resp.risePatternIndex][0])))
-//console.log("y: " + y);
-//console.log("chart.displayETCO2.max * -1: " + chart.displayETCO2.max * -1);
-
+						var _peak  = chart.resp.rhythm['high'][chart.resp.risePatternIndex][1];
+						var _start = chart.resp.rhythm['high'][chart.resp.risePatternIndex][0];
+						var _prog  = (chart.resp.length > 1) ? chart.resp.patternIndex / (chart.resp.length - 1) : 1;
+						if(_wt === 'obstructive') {
+							// Shark fin: continuous rise from baseline (0) to peak across full exhalation
+							y = -(_peak * _prog);
+						} else if(_wt === 'curare') {
+							// Curare cleft: plateau with a mid-plateau notch from diaphragmatic effort
+							var _cleft = chart.resp.rhythm['cleft'];
+							var _ci = Math.min(Math.round(_prog * (_cleft.length - 1)), _cleft.length - 1);
+							y = -(_peak * _cleft[_ci]);
+						} else {
+							// Normal: slight upward slope across the plateau
+							y = -1 * (_start + (_prog * (_peak - _start)));
+						}
 					}
 
 					//scale the y value to the current ETCO2
 					y = y * chart.resp.currentetCO2value / controls.etCO2.maxValue
+
+					// Rebreathing: CO2 doesn't return to zero between breaths.
+					// Apply an elevated baseline floor — baseline = 25% of scaled peak.
+					// Since y is negative for upward (CO2) deflections, values closer to 0
+					// than the floor are clamped to the floor.
+					if(_wt === 'rebreathing') {
+						var _peakScaled = chart.resp.rhythm['high'][chart.resp.risePatternIndex][1] * chart.resp.currentetCO2value / controls.etCO2.maxValue;
+						var _rebreathFloor = -(_peakScaled * 0.25);
+						if(y > _rebreathFloor) { y = _rebreathFloor; }
+					}
 //console.log("y: " + y);
 					
 					// check that y is not over max value
@@ -1321,10 +1394,18 @@ See gpl.html
 							case 'low': // Hold In (pattern low)
 								// breathing rate is greater than zero than advance to next waveform, else stay in low and reset pattern
 								if(simmgr.respResponse.rate > 0) {
-									chart.resp.rhythmIndex = 'low-to-high';
-									chart.resp.length = chart.resp.rhythm[chart.resp.rhythmIndex][chart.resp.risePatternIndex].length-1;
+									var _wt_low = (controls.etCO2 && controls.etCO2.waveformType) ? controls.etCO2.waveformType : 'normal';
+									if(_wt_low === 'obstructive') {
+										// Shark fin: skip upstroke array entirely — 'high' rises
+										// continuously from 0 to peak over the full exhalation duration
+										chart.resp.rhythmIndex = 'high';
+										chart.resp.length = chart.resp.exhalationDuration - chart.resp.rhythm['high-to-low'][chart.resp.risePatternIndex].length - 1;
+									} else {
+										chart.resp.rhythmIndex = 'low-to-high';
+										chart.resp.length = chart.resp.rhythm[chart.resp.rhythmIndex][chart.resp.risePatternIndex].length-1;
+									}
 								}
-								chart.resp.patternIndex = 0;								
+								chart.resp.patternIndex = 0;
 								break;
 							
 							case 'low-to-high': // Exhalation (low to high)

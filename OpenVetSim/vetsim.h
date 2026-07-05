@@ -142,6 +142,7 @@ struct respiration
 	int rate;					// Breaths per minute
 	int awRR;					// Calculated rate
 	int etco2;					// End Tidal CO2
+	char co2_waveform[STR_SIZE];	// normal, rebreathing, obstructive, curare
 	int transfer_time;			// Trend length for change in rate;
 	int etco2_indicator;
 	int spo2_indicator;

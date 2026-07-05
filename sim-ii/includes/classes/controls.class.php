@@ -118,6 +118,24 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 			return $pulseContent;
 		}
 		
+		private static $co2WaveformList = array(
+			array('value' => 'normal',       'name' => 'Normal'),
+			array('value' => 'rebreathing',  'name' => 'Rebreathing'),
+			array('value' => 'obstructive',  'name' => 'Obstructive (Shark Fin)'),
+			array('value' => 'curare',       'name' => 'Curare Cleft')
+		);
+
+		static public function getCO2WaveformDropDown($currentWaveform) {
+			$content = '';
+			foreach(self::$co2WaveformList as $wf) {
+				$selected = ($currentWaveform == $wf['value']) ? ' selected="selected"' : '';
+				$content .= '
+					<option value="' . $wf['value'] . '"' . $selected . '>' . $wf['name'] . '</option>
+				';
+			}
+			return $content;
+		}
+
 		static public function getVFIBAmplitudeDropDown($currentAmplitude) {
 			$amplitudeContent = '';
 			foreach(self::$amplitudeList as $amplitudeArray) {

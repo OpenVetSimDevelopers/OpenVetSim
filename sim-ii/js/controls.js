@@ -521,6 +521,7 @@ See gpl.html
 			changeInProgressStatus: ETCO2_OK,
 			manualETCO2Val: '---',
 			delayCount: 0,
+			waveformType: 'normal',		// 'normal', 'rebreathing', 'obstructive', 'curare'
 			
 			modalUnitsLabel: 'mmHg',
 			

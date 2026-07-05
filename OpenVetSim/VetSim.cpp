@@ -415,6 +415,7 @@ resetAllParameters(void)
 	simmgr_shm->status.respiration.rate = 20;
 	simmgr_shm->status.respiration.spo2 = 95;
 	simmgr_shm->status.respiration.etco2 = 34;
+	sprintf_s(simmgr_shm->status.respiration.co2_waveform, STR_SIZE, "%s", "normal");
 	simmgr_shm->status.respiration.etco2_indicator = 0;
 	simmgr_shm->status.respiration.spo2_indicator = 0;
 	simmgr_shm->status.respiration.chest_movement = 0;
@@ -501,6 +502,7 @@ resetAllParameters(void)
 
 	// instructor/respiration
 	sprintf_s(simmgr_shm->instructor.respiration.left_lung_sound, STR_SIZE, "%s", "");
+	sprintf_s(simmgr_shm->instructor.respiration.co2_waveform, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.respiration.left_sound_in, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.respiration.left_sound_out, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.respiration.left_sound_back, STR_SIZE, "%s", "");
@@ -1728,6 +1730,11 @@ scan_commands(void)
 	{
 		sprintf_s(simmgr_shm->status.respiration.left_lung_sound, STR_SIZE, "%s", simmgr_shm->instructor.respiration.left_lung_sound);
 		sprintf_s(simmgr_shm->instructor.respiration.left_lung_sound, STR_SIZE, "%s", "");
+	}
+	if (strlen(simmgr_shm->instructor.respiration.co2_waveform) > 0)
+	{
+		sprintf_s(simmgr_shm->status.respiration.co2_waveform, STR_SIZE, "%s", simmgr_shm->instructor.respiration.co2_waveform);
+		sprintf_s(simmgr_shm->instructor.respiration.co2_waveform, STR_SIZE, "%s", "");
 	}
 	if (strlen(simmgr_shm->instructor.respiration.right_lung_sound) > 0)
 	{

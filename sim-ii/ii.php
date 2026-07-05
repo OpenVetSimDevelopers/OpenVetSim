@@ -496,7 +496,7 @@ console.log(controls['awRR'].increment);
 						<a href="javascript: void(0)" onclick="modal.heartRate(); return false;" class="display-rate color-green">70</a>
 					</div>
 					<div class="vs-controls clearer">
-						<a href="javascript: void(0)" onclick="modal.etCO2(); return false;" class="strip-label color-white">ETCO<sub>2</sub></a>
+						<a href="javascript: void(0)" onclick="modal.respRhythm(); return false;" class="strip-label color-white">ETCO<sub>2</sub></a>
 					</div>
 					<div id="vs-etCO2" class="vs-controls">
 						<a href="javascript: void(0)" onclick="modal.etCO2(); return false;" class="display-rate color-white">75</a>
