@@ -128,7 +128,7 @@ var simmgr = {
 console.log('defib: here');
 					controls.defib.shock = 0;
 					chart.ekg.rhythmIndex = controls.heartRhythm.currentRhythm;
-					chart.ekg.length = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex].length;
+					chart.updateEkgWaveform(chart.ekg.rhythmIndex, chart.heartRate);
 				}
 				
 				if( simmgr.timeCount > 4 ) {
@@ -413,12 +413,14 @@ console.log('defib: here');
 						}
 
 
-						// calculate afib delays...scale heart rate between 0 and 2 for 100 samples
-						// average delay will be with +/- 3%.
+						// calculate afib delays — multipliers applied to the nominal RR interval.
+						// Range [0.8, 1.2] keeps the mean at 1.0 (average rate = set rate) while
+						// ensuring the minimum interval (0.8×) always exceeds the complex duration
+						// (0.75× of period), preventing truncated complexes that skew the HR display low.
 						if(response.cardiac.rhythm == 'afib') {
 							chart.afib.delay = new Array;
 							for(var index = 0; index <= chart.afib.delayCount; index++) {
-								chart.afib.delay[index] = parseFloat((Math.random() * 2.0).toFixed(2));
+								chart.afib.delay[index] = parseFloat((0.8 + Math.random() * 0.4).toFixed(2));
  							}
 						} else if(response.cardiac.rhythm == 'vtach3') {
 							// pre calculate R on T based on heart rate

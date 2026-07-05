@@ -88,6 +88,8 @@ See gpl.html
 			interval: 0,			// variable to hold interval instantiation
 			color: 'green',			// color of trace (either hex or html color)
 			rhythm: new Array,		// array of digitized rhythms
+			rhythmRef: {},			// reference waveforms ([0] arrays) used for dynamic resampling
+			activeWaveform: [],		// currently rendered waveform, resampled to fit current heart rate
 			yOffset: 0,				// yOffset of trace
 			yDisplayOffset: 5,		// display y offset
 			xOffsetLeft: 10,		// left xOffset of trace
@@ -374,12 +376,325 @@ See gpl.html
 				3, 35, 64, -5, 4, 11, 17, 4, 1 // Up to 300
 			];
 			
-			// setup pattern length
-			chart.ekg.length = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex].length;
-			
-			// setup beep value
-			chart.ekg.beepValue = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex].max() * -1;
-			
+			// Pre-computed VFib waveform segments.
+			// Three amplitude grades (high=coarse, med=medium, low=fine),
+			// 6 segments each (~4 s at 15 ms/sample).
+			// Positive values = upward deflection; draw loop applies *-1 (same convention as other rhythms).
+			chart.ekg.vfibSegments = {
+				'high': [
+					[
+						0, 1, 3, 5, 9, 12, 12, 13, 10, 6, 0, -4, -8, -12, -13, -12, -11, -8, -6, 1,
+						4, 10, 13, 15, 12, 9, 5, 1, 7, 12, 12, 7, -1, -5, -11, -14, -15, -17, -14, -11,
+						-5, 1, 4, 8, 11, 11, 12, 11, 10, 7, 4, 0, -3, -8, -9, -9, -4, 1, 7, 12,
+						13, 11, 6, 0, -3, -6, -8, -11, -10, -8, -4, 0, 4, 8, 7, 8, 7, 5, -1, -7,
+						-11, -10, -6, 0, 5, 10, 11, 13, 9, 6, 1, 9, 15, 16, 14, 9, 0, -5, -11, -14,
+						-17, -17, -16, -13, -10, -7, 0, 6, 11, 16, 16, 16, 14, 10, 4, 0, -7, -12, -17, -21,
+						-19, -17, -12, -6, -1, 15, 16, 0, -5, -12, -14, -15, -13, -11, -5, -1, 7, 12, 15, 16,
+						13, 12, 6, 1, -13, -17, -10, 1, 15, 23, 22, 14, 0, -17, -26, -18, 0, 6, 14, 16,
+						16, 12, 7, -1, -14, -22, -25, -23, -13, -1, 8, 17, 21, 20, 15, 8, 0, -5, -12, -15,
+						-17, -14, -11, -7, 1, 6, 11, 17, 20, 21, 19, 16, 12, 6, -1, -13, -14, 1, 8, 12,
+						16, 19, 18, 12, 6, 0, 6, 12, 16, 17, 15, 12, 7, 0, 11, 16, 14, 10, 0, -6,
+						-8, -12, -11, -11, -5, 1, 2, 5, 8, 9, 6, 3, 0, -12, -11, -1, 7, 10, 10, 8,
+						1, -5, -9, -10, -9, -5, 0, 9, 12, 8, 0, -5, -9, -10, -14, -14, -12, -10, -6, -4,
+						-1, -6, -5, 0, 1, 1, 0
+					],
+					[
+						0, 1, 2, 3, 3, 3, -1, -6, -10, -11, -8, -1, 3, 8, 10, 9, 7, 5, 0, -3,
+						-9, -13, -15, -14, -13, -10, -4, -1, 5, 10, 12, 13, 12, 9, 5, 1, -5, -9, -12, -8,
+						-6, 1, 10, 16, 12, 0, -4, -7, -11, -12, -13, -11, -10, -7, -4, 1, 7, 12, 14, 11,
+						7, 0, -11, -17, -21, -18, -11, 0, 14, 24, 23, 14, 0, 13, 22, 24, 22, 13, -1, -8,
+						-15, -19, -21, -21, -18, -15, -7, -1, -10, -17, -24, -26, -26, -19, -12, -1, -14, -22, -27, -25,
+						-13, 1, 6, 16, 20, 23, 23, 21, 14, 8, -2, -9, -15, -19, -22, -19, -17, -10, 0, 5,
+						12, 13, 13, 15, 11, 6, 1, -6, -11, -16, -19, -19, -20, -16, -12, -7, -1, 11, 15, 11,
+						-1, -17, -17, 0, 8, 15, 15, 9, 0, 5, 10, 10, 9, 5, 0, -11, -17, -10, -1, 4,
+						7, 10, 12, 14, 13, 11, 7, 3, 0, -6, -9, -11, -11, -5, 0, 9, 13, 12, 7, -1,
+						-7, -13, -10, 0, 6, 12, 14, 13, 7, 0, -5, -9, -11, -11, -10, -3, 1, -5, -9, -9,
+						-14, -15, -14, -11, -7, -6, -1, 7, 10, 8, 0, -7, -13, -16, -15, -14, -13, -7, 2, 13,
+						17, 17, 10, 0, -15, -16, 0, 11, 17, 12, 0, -9, -13, -18, -20, -22, -19, -14, -7, 0,
+						-10, -17, -20, -20, -11, 0, -8, -13, -18, -20, -19, -13, -8, 0, 14, 22, 23, 12, 0, -5,
+						-8, -10, -8, -6, -4, -1, 0
+					],
+					[
+						0, 1, 2, 3, 3, 0, -4, -5, -9, -10, -14, -12, -8, -5, 0, 4, 9, 11, 13, 14,
+						10, 8, 4, 0, -6, -11, -15, -19, -20, -19, -17, -12, -7, 2, -4, -10, -12, -16, -14, -11,
+						-5, -1, 11, 20, 23, 19, 11, 0, -8, -12, -17, -16, -13, -7, 0, 7, 11, 17, 20, 21,
+						21, 16, 12, 8, 0, -6, -9, -13, -17, -18, -18, -17, -14, -9, -5, 0, 9, 17, 16, 11,
+						-1, -14, -21, -21, -13, -1, 8, 16, 16, 9, -1, -5, -10, -14, -17, -16, -16, -13, -10, -5,
+						0, 10, 17, 18, 11, 0, -12, -16, -11, -1, 5, 11, 11, 11, 5, 0, -10, -15, -16, -9,
+						1, 10, 13, 11, 1, -9, -16, -16, -10, -1, 9, 14, 10, 1, -9, -11, 0, -7, -11, -8,
+						0, -3, -6, -9, -10, -10, -8, -7, -3, 0, 5, 9, 10, 9, 8, 4, 1, -8, -13, -14,
+						-8, 0, 5, 10, 7, 0, -11, -16, -12, 1, 4, 8, 11, 13, 15, 12, 12, 8, 4, -1,
+						-6, -10, -14, -13, -6, -2, -4, -9, -11, -9, -10, -4, 1, 10, 14, 9, 0, 8, 13, 17,
+						19, 21, 17, 13, 7, 1, -7, -13, -18, -21, -21, -17, -14, -6, 0, 11, 19, 21, 17, 10,
+						0, 10, 17, 21, 23, 20, 18, 8, 0, 13, 22, 26, 22, 14, 1, -5, -11, -16, -19, -19,
+						-19, -16, -12, -5, 1, 4, 11, 16, 19, 17, 18, 16, 11, 6, -1, -10, -17, -19, -18, -12,
+						-6, 0, 2, 4, 3, 1, 0
+					],
+					[
+						0, 1, 2, 4, 5, 6, 6, 4, -1, -4, -8, -11, -15, -14, -12, -9, -5, 0, 6, 13,
+						16, 18, 18, 16, 12, 7, -1, -12, -19, -17, -12, -1, 6, 10, 12, 6, -1, -10, -15, -16,
+						-9, 0, 4, 7, 10, 10, 9, 7, 4, 1, 6, 10, 6, 1, -3, -6, -9, -10, -10, -12,
+						-11, -9, -6, -4, 0, 2, 6, 9, 9, 10, 7, 7, 4, 1, 5, 8, 13, 12, 10, 4,
+						0, -7, -12, -15, -15, -6, 0, 5, 8, 9, 7, -1, -12, -16, -11, -1, 8, 11, 16, 12,
+						8, -1, -6, -9, -14, -17, -17, -17, -15, -11, -6, 0, -11, -19, -22, -19, -11, -2, 15, 16,
+						1, -10, -18, -22, -22, -16, -10, 1, 13, 23, 22, 13, -1, -10, -16, -19, -15, -11, 0, 10,
+						19, 22, 20, 11, 0, -8, -15, -21, -24, -23, -21, -15, -9, 0, 17, 25, 18, 0, -14, -19,
+						-13, -1, 10, 15, 15, 10, -1, -7, -14, -19, -21, -24, -19, -15, -8, -1, 5, 10, 13, 15,
+						14, 10, 5, 0, -8, -12, -16, -15, -13, -8, -1, 7, 13, 17, 21, 20, 17, 13, 6, 1,
+						-7, -11, -15, -16, -14, -8, 0, 7, 13, 13, 13, 7, -1, -8, -13, -13, -8, 0, 4, 9,
+						13, 14, 14, 13, 9, 6, 0, -1, -6, -8, -8, -8, -8, -5, -3, 0, 6, 10, 10, 5,
+						0, -5, -9, -8, -4, -1, 7, 11, 12, 16, 14, 9, 6, -1, -7, -12, -10, -6, 0, 3,
+						5, 5, 4, 2, 1, 0, 0
+					],
+					[
+						0, -1, -2, -3, 0, 4, 7, 5, 1, -2, -4, -9, -9, -9, -8, -7, -7, -2, 0, 4,
+						10, 10, 12, 11, 8, 4, 0, -8, -11, -8, 2, 9, 12, 13, 7, -1, -7, -11, -12, -6,
+						1, 6, 9, 8, 5, 0, -4, -8, -9, -9, -9, -7, -3, 0, -5, -9, -11, -11, -8, -4,
+						0, 9, 15, 16, 14, 9, 1, -9, -15, -18, -16, -9, -1, -13, -14, -1, 14, 22, 22, 13,
+						-1, -12, -20, -24, -20, -12, 2, 7, 15, 19, 22, 22, 18, 15, 9, 0, -12, -19, -24, -27,
+						-25, -18, -11, -1, 6, 10, 15, 16, 14, 10, 6, -1, 14, 22, 16, -1, -13, -19, -18, -11,
+						0, 12, 20, 22, 17, 12, 1, -8, -14, -16, -13, -10, -1, 11, 17, 11, 1, 8, 15, 16,
+						16, 9, 0, -13, -15, 0, 7, 12, 15, 13, 7, 1, -8, -15, -15, -7, 0, 11, 17, 17,
+						16, 9, 0, 7, 12, 13, 12, 6, 0, -7, -11, -8, -1, -9, -14, -13, -8, -1, 5, 4,
+						7, 9, 10, 8, 8, 6, 4, 1, -4, -7, -10, -12, -12, -12, -10, -8, -5, -1, 10, 13,
+						10, 0, -4, -6, -8, -9, -11, -10, -7, -7, -5, 0, 5, 10, 12, 13, 9, 7, -1, -7,
+						-10, -10, -7, 0, -4, -8, -8, -10, -9, -7, -4, 1, 6, 10, 12, 12, 10, 5, 1, -8,
+						-12, -9, -1, 4, 10, 15, 17, 18, 15, 14, 10, 5, 1, -8, -16, -19, -24, -19, -17, -10,
+						-5, 0, 2, 3, 3, 2, 0
+					],
+					[
+						0, 1, 3, 4, 0, -5, -10, -11, -7, 0, 5, 10, 6, 0, -4, -11, -11, -10, -5, 1,
+						4, 9, 10, 11, 9, 5, -1, -9, -18, -21, -21, -15, -9, -1, 5, 10, 14, 16, 18, 18,
+						14, 11, 7, 0, -9, -16, -19, -16, -8, 0, 5, 9, 14, 16, 16, 15, 14, 11, 5, 1,
+						-8, -14, -19, -21, -21, -18, -14, -8, -1, 8, 14, 16, 14, 8, -1, -8, -14, -19, -21, -19,
+						-17, -9, 0, 6, 11, 14, 16, 18, 17, 15, 11, 4, 0, -6, -12, -15, -16, -12, -9, 1,
+						12, 22, 21, 14, -1, -8, -14, -18, -22, -21, -20, -13, -6, 1, 10, 14, 10, 1, -5, -7,
+						-11, -13, -13, -13, -11, -7, -5, 0, 5, 7, 9, 10, 10, 8, 3, -1, -4, -6, -8, -9,
+						-9, -6, -3, 0, -6, -11, -12, -12, -7, 0, 7, 9, 8, 0, -6, -9, -9, -7, 1, 6,
+						11, 13, 10, 10, 7, 0, -4, -9, -11, -13, -15, -14, -12, -8, -4, 1, 6, 10, 13, 16,
+						13, 11, 7, 1, -6, -10, -13, -13, -13, -11, -9, -4, 0, 6, 9, 12, 12, 10, 5, 0,
+						-4, -7, -10, -12, -12, -9, -7, -4, 0, 7, 13, 19, 22, 22, 22, 17, 14, 7, -2, -16,
+						-24, -24, -15, 0, 6, 11, 16, 16, 17, 15, 10, 6, 0, -8, -17, -21, -20, -16, -9, 0,
+						8, 14, 17, 17, 13, 8, 0, 16, 17, 0, -8, -17, -22, -24, -24, -21, -15, -8, 0, 7,
+						11, 11, 8, 5, 2, 0, 0
+					]
+				],
+				'med': [
+					[
+						0, 1, 2, 4, 4, 5, 3, 0, -11, -12, 0, 7, 11, 9, 6, 1, -10, -17, -16, -11,
+						0, 7, 12, 12, 7, 0, -6, -9, -6, 1, 12, 14, -1, -15, -16, 0, 9, 8, 0, 8,
+						12, 14, 14, 10, 5, 1, -8, -11, -8, -1, 9, 13, 10, 0, -7, -13, -13, -8, -1, -5,
+						-6, -8, -9, -4, -1, 6, 11, 12, 11, 6, 0, -5, -8, -13, -10, -9, -5, -1, 9, 11,
+						0, -6, -9, -6, 0, 3, 3, 5, 6, 4, 4, 1, 1, -8, -7, 1, 8, 6, 1, -2,
+						-5, -6, -5, -5, -2, 0, 8, 7, 0, -5, -7, -9, -7, -6, 1, 4, 9, 9, 5, 0,
+						-6, -5, 0, 3, 5, 8, 6, 4, 3, 0, -1, -4, -4, -6, -4, -2, 1, 4, 6, 8,
+						4, 1, -3, -8, -10, -9, -5, 1, 6, 6, 0, -5, -8, -7, -6, -1, 7, 10, 11, 7,
+						0, 9, 14, 10, 0, -5, -9, -11, -11, -10, -5, 1, 7, 11, 14, 14, 11, 7, 0, -8,
+						-11, -9, 1, 7, 13, 11, 9, 0, -8, -11, -9, 0, 8, 11, 11, 7, 0, 6, 12, 12,
+						8, 0, -4, -8, -10, -8, -7, -4, 0, 8, 14, 17, 16, 14, 7, 0, -6, -9, -12, -10,
+						-6, 0, 13, 12, 0, -9, -14, -9, 0, 11, 10, 0, -8, -13, -15, -14, -8, 1, 8, 13,
+						11, 8, -1, -7, -10, -7, 0, 3, 5, 8, 5, 3, 0, -3, -6, -7, -8, -6, -5, -3,
+						0, 2, 3, 1, 1, 0, 0
+					],
+					[
+						0, 1, 2, 3, 2, 0, -2, -5, -4, 0, 2, 6, 6, 7, 4, 0, -6, -8, -5, 0,
+						-6, -6, 0, -7, -9, -6, 1, 3, 5, 6, 4, 4, -1, -5, -4, -6, -3, 0, 4, 7,
+						6, 4, 1, -6, -8, -10, -5, 0, 5, 8, 7, 4, 0, -6, -8, -8, -5, 1, 5, 6,
+						10, 9, 8, 4, 0, -6, -8, -5, 0, -6, -10, -10, -7, 1, 3, 6, 5, 4, 0, -4,
+						-5, -6, -7, -6, -2, 1, 7, 7, 0, 5, 9, 8, 5, 1, -6, -9, -10, -7, 1, 5,
+						8, 5, 0, -7, -8, 0, 8, 7, 1, -5, -10, -12, -12, -10, -5, 0, 9, 14, 14, 10,
+						-1, 9, 14, 14, 8, 0, 9, 16, 11, 1, -14, -15, 0, 11, 14, 11, -1, -12, -13, -1,
+						8, 14, 15, 15, 8, 0, -6, -11, -8, 1, 6, 13, 15, 14, 7, 0, -7, -12, -15, -14,
+						-8, 1, 10, 11, 0, -5, -7, -8, -7, -4, -1, -4, -8, -8, -4, 0, 3, 6, 7, 6,
+						4, 0, 6, 10, 12, 11, 6, 1, -3, -8, -7, -8, -5, -4, 1, 4, 8, 9, 7, 4,
+						0, -6, -10, -7, 1, 6, 8, 7, 6, 0, 3, 5, 5, 4, -1, -3, -5, -4, -3, 1,
+						4, 6, 6, 4, -1, -4, -8, -9, -7, -5, -3, 0, 3, 6, 8, 7, 3, 0, -5, -5,
+						-7, -6, -3, 0, 5, 7, 10, 9, 8, 5, 0, -9, -9, 1, 4, 6, 5, 0, -3, -5,
+						-5, -4, -3, -1, 0, 0, 0
+					],
+					[
+						0, 0, 2, 3, 4, 3, 0, 7, 11, 12, 11, 0, -7, -10, -1, 8, 13, 8, 0, -8,
+						-13, -12, -8, -1, 3, 6, 9, 9, 6, 4, 1, -4, -7, -7, -4, -1, 3, 5, 7, 6,
+						2, 0, 6, 7, 6, -1, -5, -10, -9, -8, -5, 0, 3, 6, 8, 7, 5, 2, -1, -5,
+						-4, 0, 5, 5, 7, 6, 4, 1, -2, -3, -4, -4, -3, -1, 4, 8, 9, 4, -1, -8,
+						-7, 1, 8, 8, 0, -5, -7, -9, -8, -8, -3, -1, 4, 8, 7, 8, 4, 0, -9, -11,
+						-7, 0, 7, 10, 8, -2, -8, -10, 0, 7, 8, 6, 1, -12, -11, 0, 7, 10, 11, 6,
+						-1, -7, -13, -15, -13, -8, 0, 6, 11, 15, 13, 11, 6, -1, -8, -10, -7, 0, 7, 10,
+						7, 0, -6, -12, -13, -12, -7, -1, 6, 8, 11, 13, 8, 4, 1, -6, -10, -7, 0, 10,
+						9, 1, -6, -11, -10, -6, 1, -5, -8, -11, -11, -9, -5, -1, -6, -9, -10, -7, 1, 7,
+						9, 9, 7, 0, -4, -8, -9, -5, 1, 5, 10, 11, 9, 5, 0, -6, -10, -12, -12, -11,
+						-6, -1, 5, 7, 8, 7, 4, 0, -3, -6, -6, -7, -5, -3, -1, 8, 7, -1, -4, -7,
+						-8, -4, 1, 4, 8, 4, 1, -5, -8, -10, -8, -4, 0, 7, 6, -1, -6, -6, 1, -4,
+						-6, -8, -6, -4, 0, 3, 5, 4, 3, 0, -2, -4, -5, -3, 1, 2, 4, 5, 4, 3,
+						1, 0, -3, -3, -2, 0, 0
+					],
+					[
+						0, 0, 1, 3, 4, 1, 1, -3, -3, -5, -5, 0, 3, 6, 7, 6, 3, 0, -5, -7,
+						-6, -4, 0, 3, 4, 5, 5, 5, 2, 0, -3, -7, -7, -6, -4, -1, 4, 7, 6, 7,
+						4, -1, -3, -6, -7, -6, -5, 0, 8, 6, -1, -5, -9, -5, 0, 6, 9, 8, 0, -8,
+						-8, 0, 6, 9, 11, 11, 10, 9, 3, -1, -6, -10, -13, -13, -10, -6, 0, 4, 7, 9,
+						9, 8, 4, -1, -4, -7, -7, -5, -1, 9, 13, 9, 0, -12, -15, -11, -2, 6, 11, 14,
+						13, 10, 6, 1, -11, -14, -11, 0, 8, 11, 0, -7, -7, -2, 8, 13, 15, 13, 9, 0,
+						-5, -8, -9, -7, -4, 1, 9, 16, 16, 9, 0, -6, -10, -8, -1, 9, 16, 15, 8, 1,
+						7, 11, 15, 14, 12, 5, 0, -8, -8, 0, 9, 11, 9, 0, -5, -8, -9, -6, -1, 3,
+						5, 7, 7, 5, 3, 1, -6, -10, -10, -5, 0, 7, 13, 8, 0, -8, -8, 1, -4, -4,
+						-6, -4, 0, -4, -5, -6, -5, -6, -3, 0, 4, 7, 9, 9, 8, 6, 0, -5, -7, -7,
+						-4, 1, 8, 8, 0, -3, -7, -6, -4, 0, 4, 7, 10, 9, 8, 4, 0, -5, -8, -10,
+						-4, 1, 3, 6, 8, 6, 7, 4, 0, -6, -6, -5, 0, 6, 10, 11, 9, 6, -1, -6,
+						-12, -12, -8, -1, 5, 6, 5, 2, -6, -11, -12, -7, 1, 4, 6, 8, 10, 7, 3, 0,
+						-5, -6, -3, 0, 1, 1, 0
+					],
+					[
+						0, 0, 1, 3, 4, 2, 0, -4, -7, -9, -6, 0, -7, -8, -6, 0, 7, 11, 13, 11,
+						6, 0, -4, -6, -10, -9, -9, -7, -4, 0, 10, 15, 12, 0, -4, -7, -7, -7, -3, 0,
+						11, 11, 1, -5, -10, -12, -14, -10, -7, -1, 3, 6, 8, 8, 7, 3, 1, 14, 13, 0,
+						-11, -15, -10, 0, -8, -12, -13, -8, 0, 7, 9, 8, 0, -10, -15, -14, -10, 0, 9, 13,
+						13, 8, -1, 4, 7, 8, 7, 4, 0, 10, 10, 1, -6, -8, -5, 1, 4, 6, 5, 0,
+						-5, -8, -9, -9, -6, -6, 0, 6, 9, 11, 10, 5, 0, -5, -6, -8, -9, -6, -5, 0,
+						4, 8, 8, 7, 5, 1, -3, -6, -5, -4, 0, 6, 8, 6, 0, -5, -5, -4, -1, 2,
+						4, 6, 6, 5, 1, 0, -3, -7, -7, -8, -6, -5, 0, 6, 9, 6, -1, -5, -7, -8,
+						-9, -8, -4, 0, 7, 11, 7, 0, -5, -8, -5, 0, -5, -7, -9, -8, -5, -1, 6, 7,
+						0, -8, -7, -1, 6, 8, 10, 9, 5, 1, -5, -8, -8, -9, -5, 0, 6, 12, 13, 12,
+						6, 1, -8, -11, -7, 0, 10, 10, 0, -9, -7, 0, 14, 14, 1, -8, -13, -15, -13, -7,
+						1, 9, 12, 8, 2, -7, -10, -14, -14, -10, -7, 0, 7, 12, 15, 16, 11, 7, -1, -4,
+						-8, -8, -8, -4, 0, 9, 10, -1, -6, -9, -10, -9, -5, 1, 4, 6, 9, 9, 5, 3,
+						0, -4, -4, -2, 0, 1, 0
+					],
+					[
+						0, 0, 1, 3, 3, 4, 2, 0, -5, -5, 0, 4, 5, 6, 3, 0, 7, 6, 0, -3,
+						-5, -5, -4, -2, -1, 5, 8, 9, 8, 4, 1, -4, -8, -8, -9, -8, -5, 0, 6, 4,
+						-1, -6, -10, -11, -6, -1, 7, 13, 9, 0, -6, -6, -7, -1, 8, 11, 8, 0, -7, -9,
+						-10, -7, -1, 10, 9, 1, 5, 10, 11, 9, 5, 1, -12, -16, -12, -1, 9, 16, 16, 10,
+						0, -9, -12, -11, -7, 1, 7, 12, 15, 12, 6, 1, -7, -11, -12, -6, 0, -9, -15, -16,
+						-15, -8, -1, 11, 16, 16, 10, 0, -10, -10, -1, 13, 13, 0, -8, -13, -14, -12, -8, 0,
+						-11, -12, -1, 6, 10, 7, 0, -5, -7, -8, -7, 0, 6, 10, 9, 6, 0, -8, -9, -1,
+						-4, -6, -6, -6, 0, 6, 8, 11, 12, 8, 6, 0, -5, -7, -8, -9, -4, 0, 4, 6,
+						7, 6, 4, 0, -5, -8, -4, 1, 5, 9, 8, 6, 0, -5, -5, 1, 5, 5, 1, -3,
+						-4, -5, -7, -5, -4, 0, 2, 4, 4, 6, 5, 3, 0, 5, 9, 9, 9, 5, 1, -7,
+						-9, -10, -6, -1, -6, -12, -8, 0, -6, -10, -6, -1, 6, 10, 13, 12, 9, 6, 0, -8,
+						-8, 0, -6, -6, 1, 4, 8, 9, 9, 7, 4, 0, -10, -10, 0, 7, 10, 14, 10, 5,
+						0, -7, -11, -13, -10, -6, 0, 10, 15, 10, 1, -8, -6, 1, 11, 13, 11, 0, -5, -7,
+						-8, -5, -3, 0, -2, -1, 0
+					]
+				],
+				'low': [
+					[
+						0, -1, -1, 0, 2, 4, 3, 0, -3, -5, -6, -4, 1, 4, 6, 5, 4, 0, -7, -7,
+						0, 5, 6, 4, 0, -3, -5, -6, -6, -4, 0, 7, 6, 0, -5, -7, -4, -1, 4, 6,
+						6, 3, 0, -2, -4, -5, -2, 0, 4, 4, 0, -5, -6, 0, 4, 6, 4, -1, -2, -3,
+						-3, 0, 3, 4, 0, -3, -3, -3, -1, 0, 3, 4, 3, 0, -2, -3, -4, -2, 0, 3,
+						3, 0, -3, -2, -4, -2, 0, -5, -5, 0, 2, 3, 5, 2, 0, -3, -4, -3, -1, 2,
+						3, 4, 3, 0, -1, -2, -3, -2, 0, 4, 5, 4, 1, -2, -3, -3, -2, 0, 2, 4,
+						4, 2, 0, -6, -6, 0, 2, 3, 3, 2, 0, 4, 4, 0, -6, -6, 0, 6, 6, 0,
+						5, 6, 0, -5, -6, 0, 5, 8, 6, 0, -7, -7, 0, 5, 4, 0, -5, -5, 0, 5,
+						7, 5, 0, -4, -5, 0, 4, 7, 7, 4, 0, -5, -8, -8, -6, 0, 4, 5, 0, -3,
+						-5, -5, -3, 0, 2, 3, 4, 2, 1, -4, -5, 0, -3, -3, -3, -1, 3, 4, 3, 0,
+						3, 4, 4, 2, 0, -5, -6, -4, 0, 5, 6, 0, -4, -3, 1, 4, 6, 4, 0, -4,
+						-6, -6, -3, 0, 4, 6, 6, 4, 0, -2, -2, -4, -3, -1, 1, 2, 3, 1, 0, -3,
+						-4, -3, 0, 3, 4, 3, 0, -1, -2, -2, 0, 2, 4, 4, 2, -1, -2, -2, -1, -1,
+						0, 1, 1, 0, 0, 0, 0
+					],
+					[
+						0, 0, 1, 0, -1, -2, -2, 0, 2, 3, 2, 0, -3, -3, -2, 0, 3, 5, 0, -2,
+						-3, 0, 2, 3, 2, 2, 0, -4, -6, -4, 0, 4, 4, 5, 3, 0, -3, -5, -3, -1,
+						2, 3, 4, 2, -1, -5, -4, 0, 3, 4, 4, 2, 1, -4, -6, -7, -4, 0, 4, 6,
+						4, 0, -5, -4, 0, 5, 6, 0, -5, -5, 0, 4, 6, 5, 0, -4, -7, -5, 1, 6,
+						6, 1, -5, -8, -5, 0, 3, 3, 4, 2, 0, 6, 7, 5, 0, 4, 4, 0, -5, -6,
+						-5, 0, 3, 4, 4, 2, 0, -4, -6, -4, 0, 3, 6, 4, 0, 5, 5, 0, -2, -3,
+						-4, -3, 0, 4, 6, 6, 3, -1, -4, -4, -2, 0, 3, 4, 5, 2, 0, -1, -2, -4,
+						-3, -1, 1, 3, 5, 4, 3, -1, -4, -5, -4, 1, -3, -4, 1, 3, 4, 2, 0, -2,
+						-3, -3, -3, -1, -1, 1, 4, 3, 2, 0, -3, -4, -2, 0, 3, 2, 1, -3, -3, 0,
+						3, 5, 5, 2, 0, -4, -3, 0, 5, 5, 0, -1, -2, -3, -1, 0, 4, 3, 0, 4,
+						4, 0, 3, 3, 1, -3, -4, -5, -2, 0, 3, 6, 5, 0, 5, 5, 0, -2, -4, -3,
+						-1, 3, 4, 0, -4, -4, 0, 4, 3, 4, 0, -3, -4, -4, -3, 0, 5, 6, 0, -4,
+						-6, -6, -4, 0, -5, -8, -9, -5, 0, 5, 4, 0, -3, -4, -4, -2, 0, 5, 5, 4,
+						0, -2, -3, -2, -1, 0, 0
+					],
+					[
+						0, 1, 1, 0, 2, 2, 0, -2, -3, -4, -2, 0, 3, 5, 5, 3, 0, -3, -4, -3,
+						0, 8, 6, -1, -6, -8, -6, 1, -5, -7, -5, 0, 4, 4, 0, -4, -6, -7, -5, 0,
+						3, 4, 5, 3, 0, 3, 3, 0, 2, 3, 3, 2, 0, 4, 3, 0, -3, -4, -5, -2,
+						0, 3, 5, 5, 3, 0, -3, -2, 0, 5, 4, 0, -4, -4, 0, -3, -4, -4, -1, 3,
+						2, 2, 0, -3, -3, -2, 0, 3, 3, 0, -3, -3, -1, 2, 3, 2, 0, -2, -2, -1,
+						2, 3, 1, 0, -3, -4, -2, 0, 3, 3, 2, 1, -2, -5, -4, -2, 0, 4, 3, 0,
+						-3, -3, 0, 1, 3, 2, 1, 0, -5, -4, 0, 3, 4, 3, 0, -5, -5, -1, -3, -3,
+						0, 3, 3, 0, -4, -4, 0, 3, 5, 4, 2, 1, -6, -8, -5, 0, 3, 7, 6, 3,
+						0, -5, -8, -8, -4, 1, 5, 4, -1, -3, -3, 1, 3, 7, 6, 4, 1, -6, -7, 0,
+						4, 4, 0, -4, -5, -3, 0, 5, 5, 0, -4, -4, -2, 0, 3, 6, 7, 5, 0, -5,
+						-8, -7, -4, 1, 3, 6, 6, 4, 0, -5, -8, -7, -5, 0, 1, 3, 5, 2, 0, -3,
+						-3, 0, 4, 6, 5, 0, -3, -6, -6, -4, 0, 3, 3, 4, 2, 0, -5, -4, 0, 4,
+						5, 0, -3, -5, -4, 0, 3, 4, 4, 1, -2, -3, -3, 0, 3, 3, 3, 0, 2, 2,
+						1, -1, -2, -2, 0, 0, 0
+					],
+					[
+						0, 0, 1, 1, 2, 1, 0, -1, -2, -3, -3, -2, 0, 2, 4, 3, 2, 0, -3, -5,
+						-3, 0, 6, 6, 0, -5, -7, -5, 0, 2, 4, 6, 2, 0, -3, -4, 0, 2, 4, 4,
+						2, 0, -4, -6, -4, 1, -3, -5, -4, -3, 0, 6, 6, 0, -2, -4, -3, 0, 4, 6,
+						4, -1, -3, -6, -7, -7, -4, 0, 6, 8, 7, 1, 4, 3, 1, -5, -8, -7, 0, 5,
+						6, 0, -5, -5, -1, 4, 7, 7, 4, 0, -3, -5, -4, -3, 0, 5, 5, 0, -5, -6,
+						0, 6, 5, -1, -2, -4, -4, -2, -1, 3, 4, 5, 2, 0, -4, -4, -4, 0, 3, 4,
+						3, 0, -3, -4, -3, 0, 3, 3, 0, -2, -4, -2, 1, 1, 2, 2, 0, 0, -2, -4,
+						-3, -2, -1, 2, 3, 3, 3, 0, -4, -4, -1, 2, 2, 3, 0, -2, -3, -1, 2, 2,
+						1, -2, -3, -2, 0, 3, 4, 2, 1, -3, -4, -3, 0, -3, -4, -4, -3, 0, 4, 4,
+						2, 1, -1, -3, -2, -2, 0, 4, 3, -1, -3, -4, -1, 6, 7, 5, 0, 3, 3, 0,
+						4, 8, 5, -1, -4, -5, -4, 0, 2, 3, 3, 1, -5, -7, -7, -4, 0, -5, -5, -6,
+						-4, 0, 3, 4, 4, 2, 0, -5, -8, -5, -1, -6, -7, -6, 1, 2, 5, 4, 3, 0,
+						-3, -5, -3, 0, 3, 5, 6, 3, 1, -3, -4, -4, -2, 0, 3, 5, 5, 3, 0, -3,
+						-2, 1, 2, 2, 0, -1, 0
+					],
+					[
+						0, 0, 1, 1, 1, 0, -3, -5, -4, 0, -4, -6, -5, -3, 0, 6, 5, 0, -2, -4,
+						-4, -2, 0, 7, 7, 1, -3, -3, -1, 3, 4, 3, 1, -5, -6, -4, 0, 3, 4, 0,
+						-4, -6, -3, -1, 2, 2, 3, 2, 0, -3, -6, -5, -4, 0, 3, 2, 1, -4, -3, 0,
+						3, 3, 0, -1, -3, -2, -1, 0, 4, 4, -1, -3, -3, -4, -2, 0, 4, 4, 1, -3,
+						-4, -1, 1, 3, 3, 2, 0, -2, -3, 0, 5, 4, 0, 4, 3, -1, 4, 4, 5, 3,
+						-1, -2, -2, -2, -1, -2, 2, 4, 5, 2, 0, -3, -4, -3, 0, -3, -6, -4, 1, 3,
+						6, 6, 3, 0, -3, -3, -2, 0, 4, 4, 0, -5, -5, -5, 0, -4, -4, -4, 0, 5,
+						6, 5, 0, -4, -4, 0, 5, 4, 0, -4, -6, -4, -1, 4, 6, 6, 4, 0, -4, -5,
+						-4, 0, 4, 4, 0, -4, -6, -5, 0, 3, 6, 6, 4, 0, -4, -5, -4, 0, 3, 6,
+						6, 3, 0, -3, -8, -7, -4, 1, 3, 6, 6, 5, 0, -3, -5, -4, 0, 5, 8, 8,
+						5, 0, -2, -4, -3, 0, 3, 3, 0, -3, -5, -5, -4, -3, 0, 4, 7, 4, -1, -3,
+						-4, 1, 4, 7, 4, 0, -1, -3, -3, -2, 0, 3, 4, 5, 3, 0, -3, -5, -5, -3,
+						1, 3, 5, 3, 1, -3, -5, -4, -2, 1, 2, 3, 0, -2, -2, -3, 0, -3, -3, -3,
+						-2, 0, 1, 1, 1, 0, 0
+					],
+					[
+						0, 0, 1, 2, 1, 0, -3, -4, -4, 0, 7, 7, 0, -4, -7, -8, -7, -4, 0, 5,
+						5, 0, -2, -5, -5, -3, -1, 6, 8, 5, 0, -7, -6, 0, 5, 5, 0, -5, -6, -1,
+						4, 8, 6, 0, 3, 7, 6, 4, -1, -5, -7, -8, -5, 0, 3, 3, -1, -5, -5, 0,
+						3, 2, 0, -5, -6, -4, 0, 5, 6, 4, 0, -3, -4, 0, 4, 6, 4, 0, -1, -2,
+						-3, -1, 0, 4, 3, 1, -2, -2, 0, 4, 4, 3, 0, -2, -3, -3, 0, 2, 4, 3,
+						3, 0, 2, 3, 3, 4, 2, 0, -2, -1, 0, 4, 4, 3, 0, 3, 4, 0, -4, -4,
+						-2, -1, 3, 4, 0, -3, -3, 0, -2, -3, -3, -2, 0, 5, 5, 1, -5, -4, 0, 2,
+						3, 0, 3, 4, 4, 2, 1, -5, -7, -7, -4, 0, 4, 7, 6, 4, 0, -4, -6, -7,
+						-4, 0, 3, 4, 0, -4, -6, -4, 0, 3, 7, 6, 6, 3, -1, -5, -5, 0, 4, 5,
+						4, 2, 1, -6, -6, 0, 3, 5, 6, 4, 1, -4, -5, -5, -3, 0, 5, 9, 8, 4,
+						0, -3, -4, -4, -3, 0, 3, 4, 3, 1, -5, -4, 0, 6, 8, 0, -3, -4, -5, -3,
+						-1, 4, 5, 5, 0, -4, -7, -4, -1, 4, 6, 6, 3, 0, -4, -6, -6, -4, 0, 3,
+						3, 3, 0, -3, -5, -5, -3, 0, 2, 4, 5, 4, 2, 0, -3, -2, 1, -2, -3, -3,
+						-1, 0, 1, 1, 0, 0, 0
+					]
+				]
+			};
+			// Segment-playback state for vfib
+			chart.vfib.segIdx = 0;
+			chart.vfib.sampleIdx = 0;
+
+			// Store reference waveforms for dynamic resampling (the lowest-rate [0] arrays).
+			// vtach3, vfib, cpr, and defib are excluded — they use their own generation paths.
+			chart.ekg.rhythmRef['sinus']    = chart.ekg.rhythm['sinus'][0].slice();
+			chart.ekg.rhythmRef['afib']     = chart.ekg.rhythm['afib'][0].slice();
+			chart.ekg.rhythmRef['vtach1']   = chart.ekg.rhythm['vtach1'][0].slice();
+			chart.ekg.rhythmRef['vtach2']   = chart.ekg.rhythm['vtach2'][0].slice();
+			chart.ekg.rhythmRef['asystole'] = chart.ekg.rhythm['asystole'][0].slice();
+			chart.ekg.rhythmRef['vpc1']     = chart.ekg.rhythm['vpc1'][0].slice();
+			chart.ekg.rhythmRef['vpc2']     = chart.ekg.rhythm['vpc2'][0].slice();
+
+			// Initialize active waveform to asystole (flatline at startup)
+			chart.ekg.activeWaveform = chart.ekg.rhythm['asystole'][0].slice();
+			chart.ekg.length = chart.ekg.activeWaveform.length;
+			chart.ekg.beepValue = chart.ekg.rhythm['asystole'][0].max() * -1;
+
 			// start the pattern
 			chart.ekg.interval = setInterval(chart.drawEkgPixel, chart.ekg.drawInterval);
 						
@@ -509,24 +824,23 @@ See gpl.html
 		// Passed the cardiac data from simmgr status
 		updateCardiac: function( cardiac) {
 			if(controls.cpr.inProgress == true) {
-				chart.ekg.rateIndex = 0;				
-			} else if ( cardiac.rate <= 0  ) {
+				chart.ekg.rateIndex = 0;
+			} else if ( cardiac.rate <= 0 ) {
 //				chart.ekg.rhythmIndex = 'asystole';	// Flatline
-			} else if(chart.ekg.rhythmIndex == 'sinus') {
-				if( cardiac.rate <= 65 ) {
-					chart.ekg.rateIndex = 0;
-				}
-				else if( cardiac.rate <= 100 ) {
-					chart.ekg.rateIndex = 1;
-				}
-				else if( cardiac.rate <= 220 ) {
-					chart.ekg.rateIndex = 2;
-				}
-				else {
-					chart.ekg.rateIndex = 3;
+			} else {
+				// Reset vfib segment playback state whenever the rhythm switches to vfib.
+				if(chart.ekg.rhythmIndex === 'vfib') {
+					chart.vfib.segIdx = Math.floor(Math.random() * 6);
+					chart.vfib.sampleIdx = 0;
 				}
 
-				if(controls.heartRhythm.vpc != 'none') {
+				// Dynamically resample the active waveform to fit the current heart rate.
+				// Rhythms without a rhythmRef (vfib, vtach3, cpr, defib) use their own
+				// generation paths and are unaffected.
+				chart.updateEkgWaveform(chart.ekg.rhythmIndex, cardiac.rate);
+
+				// VPC handling still uses the rateIndex lookup (separate from main rhythm)
+				if(chart.ekg.rhythmIndex == 'sinus' && controls.heartRhythm.vpc != 'none') {
 					if( cardiac.rate <= 65 ) {
 						chart.ekg.vpcRateIndex = 0;
 					}
@@ -539,68 +853,23 @@ See gpl.html
 
 					// calculate length of VPC
 					chart.ekg.vpcLength = chart.ekg.rhythm[controls.heartRhythm.vpc][chart.ekg.vpcRateIndex].length;
-					
+
 					// calculate vpc synch delay 1.4X of heart rate (or 70%) minus width of sinus pulse
 					chart.ekg.vpcSynchDelay = Math.floor(((60 / cardiac.rate) * chart.ekg.vpcAdvanceDelay) / chart.ekg.drawInterval);
 
 					// set these 2 params to kick off a series of VPC's.
 					chart.ekg.vpcCount = -1;
 					chart.ekg.vpcSynchDelayCount = 0;
-					
+
 					chart.ekg.vpcPatternIndex = 0;
 				}
-			} else if(chart.ekg.rhythmIndex == 'vfib') {
-				if( cardiac.rate <= 75 ) {
-					chart.ekg.rateIndex = 0;
-				}
-				else if( cardiac.rate <= 140 ) {
-					chart.ekg.rateIndex = 1;
-				}
-				else if( cardiac.rate <= 230 ) {
-					chart.ekg.rateIndex = 2;
-				}
-				else {
-					chart.ekg.rateIndex = 3;
-				}			
-			} else if(chart.ekg.rhythmIndex == 'afib') {
-				if( cardiac.rate <= 80 ) {
-					chart.ekg.rateIndex = 0;
-				} else {
-					chart.ekg.rateIndex = 1;
-				}			
-			} else if(chart.ekg.rhythmIndex == 'vtach1') {
-				if( cardiac.rate <= 80 ) {
-					chart.ekg.rateIndex = 0;
-				} else if( cardiac.rate <= 160 ) {
-					chart.ekg.rateIndex = 1;
-				} else if( cardiac.rate <= 240 ) {
-					chart.ekg.rateIndex = 2;				
-				} else {
-					chart.ekg.rateIndex = 3;				
-				}		
-			} else if(chart.ekg.rhythmIndex == 'vtach2') {
-				if( cardiac.rate <= 80 ) {
-					chart.ekg.rateIndex = 0;
-				} else if( cardiac.rate <= 160 ) {
-					chart.ekg.rateIndex = 1;
-				} else if( cardiac.rate <= 240 ) {
-					chart.ekg.rateIndex = 2;				
-				} else {
-					chart.ekg.rateIndex = 3;				
-				}		
-			}  else if(chart.ekg.rhythmIndex == 'vtach3') {
-				chart.ekg.rateIndex = 0;
 			}
-			
-			if ( typeof ( chart.ekg.rhythm[chart.ekg.rhythmIndex] ) === 'undefined' || typeof chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex] == 'undefined')
+
+			if ( typeof ( chart.ekg.rhythm[chart.ekg.rhythmIndex] ) === 'undefined' )
 			{
 //				console.log("No EKG Rhythm "+chart.ekg.rhythmIndex );
 				chart.ekg.rhythmIndex = 'asystole';	// Flatline
 				chart.ekg.rateIndex = 0;
-			}
-			
-			if(chart.ekg.rhythmIndex != 'dfib') {
-				chart.ekg.length = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex].length;
 			}
 			
 			if(chart.ekg.patternIndex >= chart.ekg.length) {
@@ -633,7 +902,7 @@ See gpl.html
 		// routine to initialize vtach 3 R on T values based on heart rate sinusoidal
 		// updated amplitude setting per Dan F - 2024-03-04
 		initVtach3: function() {
-			chart.ekg.rhythm.vtach3[0] = new Array;	
+			chart.ekg.rhythm.vtach3[0] = new Array;
 			xIncr = (controls.heartRate.value * chart.ekg.drawInterval * Math.PI) / 60000;
 //			var amplitude = chart.ekg.height / 2;
 			var amplitude = chart.ekg.height / 2.5;
@@ -644,6 +913,79 @@ See gpl.html
 				chart.ekg.rhythm.vtach3[0][index] = (Math.sin(x*2) * -amplitude) + 10;
 				index++;
 			}
+		},
+
+		// Resample a waveform array to a new length using linear interpolation.
+		// Values are rounded to integers to preserve the integer precision of the
+		// original arrays (important for the beepValue equality check in drawEkgPixel).
+		// If targetLength >= ref.length, returns a copy without upsampling.
+		//
+		// Peak-preserving: the sample position nearest to the maximum value is
+		// snapped to land exactly on it, preventing the R wave from being skipped
+		// when aggressive downsampling causes uniform spacing to miss the peak.
+		resampleWaveform: function(ref, targetLength) {
+			if(targetLength >= ref.length) return ref.slice();
+
+			// Find the index of the maximum value (R wave peak) — must be preserved
+			var peakIdx = 0;
+			for(var i = 1; i < ref.length; i++) {
+				if(ref[i] > ref[peakIdx]) peakIdx = i;
+			}
+
+			// Build sample positions: uniform spacing with the nearest position
+			// snapped to peakIdx so the peak amplitude is always captured exactly.
+			var scale = (ref.length - 1) / (targetLength - 1);
+			var snapTo = Math.round(peakIdx / scale);           // nearest uniform slot
+			snapTo = Math.max(0, Math.min(snapTo, targetLength - 1));
+
+			var positions = new Array(targetLength);
+			for(var i = 0; i < targetLength; i++) {
+				positions[i] = (i === snapTo) ? peakIdx : i * scale;
+			}
+
+			// Interpolate at each position
+			var result = new Array(targetLength);
+			for(var i = 0; i < targetLength; i++) {
+				var pos = positions[i];
+				var lo = Math.floor(pos);
+				var hi = Math.min(lo + 1, ref.length - 1);
+				var frac = pos - lo;
+				result[i] = Math.round(ref[lo] * (1 - frac) + ref[hi] * frac);
+			}
+			return result;
+		},
+
+		// Compute and store the active waveform for the given rhythm and heart rate.
+		// Dynamically resamples the reference ([0]) waveform so the complex width
+		// scales smoothly with rate, replacing the 4-level rateIndex lookup table.
+		// complexFraction controls what fraction of the RR interval the complex occupies.
+		updateEkgWaveform: function(rhythmIndex, heartRate) {
+			// vtach3 is a sine wave regenerated by initVtach3() before this is called
+			if(rhythmIndex == 'vtach3') {
+				chart.ekg.activeWaveform = chart.ekg.rhythm['vtach3'][0].slice();
+				chart.ekg.length = chart.ekg.activeWaveform.length;
+				return;
+			}
+
+			var ref = chart.ekg.rhythmRef[rhythmIndex];
+			if(!ref) {
+				// No reference defined (e.g. vfib, cpr, defib) — those rhythms use
+				// their own generation paths and don't need activeWaveform.
+				return;
+			}
+
+			if(heartRate <= 0) {
+				chart.ekg.activeWaveform = ref.slice();
+				chart.ekg.length = ref.length;
+				return;
+			}
+
+			var complexFraction = 0.75;
+			var period = Math.round(60000 / heartRate / chart.ekg.drawInterval);
+			var targetLength = Math.min(ref.length, Math.max(5, Math.floor(period * complexFraction)));
+			chart.ekg.activeWaveform = chart.resampleWaveform(ref, targetLength);
+			chart.ekg.length = chart.ekg.activeWaveform.length;
+			chart.ekg.beepValue = Math.max.apply(null, chart.ekg.activeWaveform) * -1;
 		},
 		
 		drawEkgPixel: function() {
@@ -717,7 +1059,7 @@ See gpl.html
 						// see if we are doing a vpc...here is where we would generate noise or the pre-vpc delay
 						y = chart.getEKGNoisePixel();						
 					} else if(chart.status.cardiac.synch == true || chart.ekg.patternIndex > 0) {
-						y = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex][chart.ekg.patternIndex] * -1;
+						y = chart.ekg.activeWaveform[chart.ekg.patternIndex] * -1;
 						if ( typeof simsound !== 'undefined' && chart.status.cardiac.synch == true )
 						{
 							simsound.playHeartSound();
@@ -739,8 +1081,8 @@ See gpl.html
 						y = chart.vfib.base + chart.getafibBase();
 						
 					} else if(chart.status.cardiac.synch == true || chart.ekg.patternIndex > 0) {
-						y = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex][chart.ekg.patternIndex] * -1;
-						
+						y = chart.ekg.activeWaveform[chart.ekg.patternIndex] * -1;
+
 						if ( typeof simsound !== 'undefined' )
 						{
 							//simsound.playHeartSound();
@@ -755,24 +1097,36 @@ See gpl.html
 						chart.ekg.patternIndex++;
 					}
 				} else if(chart.ekg.rhythmIndex == 'asystole') {
-					y = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex][chart.ekg.patternIndex] * -1;
-					
+					y = chart.ekg.activeWaveform[chart.ekg.patternIndex] * -1;
+
 					// generate random noise between range
 					y += Math.floor((Math.random() * chart.ekg.noiseMax));
 					if(y > (chart.ekg.noiseMax / 2)) {
 						y -= (chart.ekg.noiseMax / 2);
 					}
-					
+
 					// increment pointers
 					chart.ekg.patternIndex++;
 				} else if(chart.ekg.rhythmIndex == 'vtach3') {
-					y = chart.ekg.rhythm[chart.ekg.rhythmIndex][chart.ekg.rateIndex][chart.ekg.patternIndex];
+					y = chart.ekg.activeWaveform[chart.ekg.patternIndex];
 					
 					// increment pointers
 					chart.ekg.patternIndex++;
 				} else if(chart.ekg.rhythmIndex == 'vfib') {
-					chart.vfib.base = chart.getBaseline();
-					y = chart.vfib.base + chart.getfib() - 6;
+					// Look up grade: 'high' = coarse, 'med' = medium, 'low' = fine.
+					var vfibGrade = controls.heartRhythm.vfibAmplitude || 'high';
+					if(vfibGrade === 'medium') { vfibGrade = 'med'; }
+					var vfibSegs = chart.ekg.vfibSegments[vfibGrade];
+					if(!vfibSegs) { vfibSegs = chart.ekg.vfibSegments['high']; }
+					y = vfibSegs[chart.vfib.segIdx][chart.vfib.sampleIdx] * -1;
+					chart.vfib.sampleIdx++;
+					if(chart.vfib.sampleIdx >= vfibSegs[chart.vfib.segIdx].length) {
+						chart.vfib.sampleIdx = 0;
+						var nextSeg;
+						do { nextSeg = Math.floor(Math.random() * vfibSegs.length); }
+						while(nextSeg === chart.vfib.segIdx && vfibSegs.length > 1);
+						chart.vfib.segIdx = nextSeg;
+					}
 				}
 				
 				// clear out sync flag

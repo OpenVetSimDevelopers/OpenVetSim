@@ -202,9 +202,10 @@ pulse_beat_handler(void)
 					hrLogBeat();
 					if (afibActive)
 					{
-						// Next beat phase is between 50% and 200% of standard. 
-						// Calculate a random from 0 to 14 and add to 5
-						beatPhase = 5 + (rand() % 14);
+						// Next beat phase is centered on the normal sinus value (9),
+						// giving an average rate equal to the set rate.
+						// Range 3-15 = 40% to 160% of standard interval around mean.
+						beatPhase = 3 + (rand() % 13);
 					}
 					else if ((vpcType > 0) && (currentVpcFreq > 0))
 					{
