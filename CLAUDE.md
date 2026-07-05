@@ -219,13 +219,14 @@ from the mac section — make sure `WinVetSim.exe` exists there before packaging
 
 ## Current Version
 
-**v2.5.0** — Collaborator C++ updates
+**v2.6.0** — ECG improvements
 
 ### Release history
 - v1.0.0 — initial release (arm64 only)
 - v1.1.0 — OBS v5, Application Support paths, desktop shortcut (skipped in releases)
 - v1.2.0 — universal binary (arm64 + Intel), Copy Video Log Path menu item, macOS code signing + notarization
 - v2.5.0 — collaborator C++ updates (VetSim, pulse, scenario, simstatus, and others)
+- v2.6.0 — ECG improvements: afib rate fix, dynamic resampling, peak preservation, pre-computed VFib waveforms
 
 ---
 
