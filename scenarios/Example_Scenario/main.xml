@@ -560,7 +560,7 @@
                 <etco2>58</etco2>
                 <rate>27</rate>
                 <chest_movement>1</chest_movement>
-                <transfer_time>12</transfer_time>
+<!--                <transfer_time>12</transfer_time>  -->
             </respiration>
             <general>
                 <temperature>1002</temperature>

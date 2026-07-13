@@ -27,11 +27,15 @@
 #include <utility>
 
 using namespace std;
+namespace fs = std::filesystem;
 
 void sendStatus(void);
 void sendQuickStatus(void);
 void sendSimctrData(void);
 void replaceAll(char* args, size_t len, const char* needle, const char replace);
+void sendStaticFile(const char* reqPath);
+void sendScenarioList(void);
+void sendScenarioXml(const char* args);
 
 string htmlReply;
 int closeFlag = 0;
@@ -269,11 +273,38 @@ simstatusMain(void)
 				{
 					if (strcmp(path, "simstatus.cgi") == 0)
 					{
-						simstatusHandleCommand(args );
+						simstatusHandleCommand(args);
 					}
 					else if (strcmp(path, "cgi-bin/simstatus.cgi") == 0)
 					{
-						simstatusHandleCommand(args );
+						simstatusHandleCommand(args);
+					}
+					else if (strcmp(path, "scenarios.cgi") == 0)
+					{
+						// List scenario directories for sim-remote UI
+						sendScenarioList();
+					}
+					else if (strcmp(path, "scenarioxml.cgi") == 0)
+					{
+						// Return raw scenario XML for event parsing in sim-remote
+						sendScenarioXml(args);
+					}
+					else if (strcmp(path, "sim-remote") == 0)
+					{
+						// Redirect to trailing-slash form so relative URLs resolve correctly
+						htmlReply += "HTTP/1.1 301 Moved Permanently\r\n";
+						htmlReply += "Location: /sim-remote/\r\n";
+						htmlReply += "Access-Control-Allow-Origin: *\r\n";
+						htmlReply += "Connection: close\r\n\r\n";
+					}
+					else if (strcmp(path, "sim-remote/") == 0)
+					{
+						sendStaticFile("sim-remote/index.html");
+					}
+					else if (strncmp(path, "sim-remote/", 11) == 0)
+					{
+						// Serve static files for the mobile remote UI
+						sendStaticFile(path);
 					}
 					else
 					{
@@ -355,6 +386,176 @@ sendNotFound(char *path)
 	htmlReply += "< / style>\n";
 	htmlReply += "< / head><body><h1>Not Found< / h1><p>The requested resource <code class = 'url'> / " + str + "< / code> was not found on this server.< / p>< / body> < / html>\n";
 }
+
+/*
+ * sendStaticFile – serve a static file from the HTML root.
+ *
+ * reqPath is a relative path such as "sim-remote/css/remote.css".
+ * Only paths that start with "sim-remote/" are served; anything else
+ * returns 404 so that we never accidentally expose other files.
+ * Path components containing ".." are rejected outright.
+ */
+void
+sendStaticFile(const char* reqPath)
+{
+	// Security: reject traversal attempts
+	if (strstr(reqPath, "..") != NULL)
+	{
+		sendNotFound((char*)reqPath);
+		return;
+	}
+
+	fs::path filePath = fs::path(HTML_PATH) / reqPath;
+
+	// Determine MIME type from file extension
+	std::string ext = filePath.extension().string();
+	std::string mimeType = "application/octet-stream";
+	if      (ext == ".html" || ext == ".htm") mimeType = "text/html; charset=utf-8";
+	else if (ext == ".css")  mimeType = "text/css";
+	else if (ext == ".js")   mimeType = "application/javascript";
+	else if (ext == ".json") mimeType = "application/json";
+	else if (ext == ".png")  mimeType = "image/png";
+	else if (ext == ".jpg"  || ext == ".jpeg") mimeType = "image/jpeg";
+	else if (ext == ".svg")  mimeType = "image/svg+xml";
+	else if (ext == ".ico")  mimeType = "image/x-icon";
+	else if (ext == ".txt")  mimeType = "text/plain";
+
+	std::ifstream file(filePath, std::ios::binary);
+	if (!file.is_open())
+	{
+		sendNotFound((char*)reqPath);
+		return;
+	}
+
+	std::string content((std::istreambuf_iterator<char>(file)),
+	                     std::istreambuf_iterator<char>());
+	file.close();
+
+	htmlReply += "HTTP/1.1 200 OK\r\n";
+	htmlReply += "Server: vetsim/1.0\r\n";
+	htmlReply += "Access-Control-Allow-Origin: *\r\n";
+	htmlReply += "Content-Type: " + mimeType + "\r\n";
+	htmlReply += "Content-Length: " + to_string(content.size()) + "\r\n";
+	htmlReply += "Cache-Control: no-cache\r\n";
+	htmlReply += "Connection: close\r\n\r\n";
+	htmlReply += content;
+}
+
+/*
+ * sendScenarioList – return a JSON array of scenario directory names.
+ *
+ * Scans HTML_PATH/scenarios/ and returns ["dir1","dir2",...] so that
+ * the sim-remote UI can populate the scenario picker without PHP.
+ */
+void
+sendScenarioList(void)
+{
+	fs::path scenariosPath = fs::path(HTML_PATH) / "scenarios";
+
+	htmlReply += "HTTP/1.1 200 OK\r\n";
+	htmlReply += "Server: vetsim/1.0\r\n";
+	htmlReply += "Access-Control-Allow-Origin: *\r\n";
+	htmlReply += "Content-Type: application/json\r\n";
+	htmlReply += "Cache-Control: no-cache\r\n";
+	htmlReply += "Connection: close\r\n\r\n";
+
+	htmlReply += "[";
+	bool first = true;
+	std::error_code ec;
+
+	if (fs::is_directory(scenariosPath, ec))
+	{
+		// Collect entries first so we can sort them
+		std::vector<std::string> dirs;
+		for (auto& entry : fs::directory_iterator(scenariosPath, ec))
+		{
+			if (!entry.is_directory()) continue;
+			std::string name = entry.path().filename().string();
+			if (name.empty() || name[0] == '.') continue;  // skip hidden
+			dirs.push_back(name);
+		}
+		std::sort(dirs.begin(), dirs.end());
+		for (auto& d : dirs)
+		{
+			if (!first) htmlReply += ",";
+			htmlReply += "\"" + d + "\"";
+			first = false;
+		}
+	}
+
+	htmlReply += "]";
+}
+
+/*
+ * sendScenarioXml – return the raw XML for a named scenario.
+ *
+ * Handles GET /scenarioxml.cgi?scenario=<name>.
+ * The browser's DOMParser is used on the client side to extract events,
+ * so we just serve the file as-is.  Path traversal is rejected.
+ */
+void
+sendScenarioXml(const char* args)
+{
+	char scenarioName[256] = { 0 };
+
+	// Parse "scenario=<name>" from the query string
+	if (args)
+	{
+		const char* prefix = "scenario=";
+		const char* found = strstr(args, prefix);
+		if (found)
+		{
+			found += strlen(prefix);
+			int i = 0;
+			while (found[i] && found[i] != '&' && i < 255)
+			{
+				scenarioName[i] = found[i];
+				i++;
+			}
+			scenarioName[i] = 0;
+		}
+	}
+
+	if (strlen(scenarioName) == 0 || strstr(scenarioName, "..") != NULL)
+	{
+		htmlReply += "HTTP/1.1 400 Bad Request\r\n";
+		htmlReply += "Access-Control-Allow-Origin: *\r\n";
+		htmlReply += "Connection: close\r\n\r\n";
+		htmlReply += "Missing or invalid scenario name";
+		return;
+	}
+
+	fs::path xmlPath = fs::path(HTML_PATH) / "scenarios" / scenarioName / "main.xml";
+
+	std::ifstream file(xmlPath, std::ios::binary);
+	if (!file.is_open())
+	{
+		// Try alternate extensions
+		xmlPath = fs::path(HTML_PATH) / "scenarios" / scenarioName / "main.sce";
+		file.open(xmlPath, std::ios::binary);
+	}
+	if (!file.is_open())
+	{
+		htmlReply += "HTTP/1.1 404 Not Found\r\n";
+		htmlReply += "Access-Control-Allow-Origin: *\r\n";
+		htmlReply += "Connection: close\r\n\r\n";
+		return;
+	}
+
+	std::string content((std::istreambuf_iterator<char>(file)),
+	                     std::istreambuf_iterator<char>());
+	file.close();
+
+	htmlReply += "HTTP/1.1 200 OK\r\n";
+	htmlReply += "Server: vetsim/1.0\r\n";
+	htmlReply += "Access-Control-Allow-Origin: *\r\n";
+	htmlReply += "Content-Type: text/xml; charset=utf-8\r\n";
+	htmlReply += "Content-Length: " + to_string(content.size()) + "\r\n";
+	htmlReply += "Cache-Control: no-cache\r\n";
+	htmlReply += "Connection: close\r\n\r\n";
+	htmlReply += content;
+}
+
 struct argument
 {
 	string key;

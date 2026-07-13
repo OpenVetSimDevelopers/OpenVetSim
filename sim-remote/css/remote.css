@@ -1,0 +1,628 @@
+/* sim-remote — mobile-optimized stylesheet */
+
+/* ── Reset & base ── */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    /* Prevent double-tap zoom on all elements while keeping pinch-zoom */
+    touch-action: manipulation;
+}
+
+:root {
+    --bg:           #111827;
+    --bg-card:      #1f2937;
+    --bg-input:     #374151;
+    --border:       #374151;
+    --text:         #f9fafb;
+    --text-muted:   #9ca3af;
+    --text-dim:     #6b7280;
+
+    --green:        #4ade80;
+    --green-dim:    #166534;
+    --cyan:         #22d3ee;
+    --cyan-dim:     #155e75;
+    --amber:        #fbbf24;
+    --amber-dim:    #78350f;
+    --red:          #f87171;
+    --red-dim:      #7f1d1d;
+    --purple:       #c084fc;
+    --purple-dim:   #581c87;
+
+    --tab-h:        60px;
+    --header-h:     52px;
+    --radius:       10px;
+    --touch:        48px;   /* minimum touch target */
+}
+
+html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 15px;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+}
+
+/* ── Header ── */
+#header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--header-h);
+    background: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 100;
+    border-bottom: 1px solid var(--border);
+}
+
+#header h1 {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--cyan);
+}
+
+#connection-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+#status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.3s;
+}
+#status-dot.connected    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+#status-dot.disconnected { background: var(--red); }
+
+/* ── Scroll area ── */
+#content {
+    position: fixed;
+    top: var(--header-h);
+    bottom: var(--tab-h);
+    left: 0; right: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ── Tab panels ── */
+.tab-panel { display: none; padding: 12px; }
+.tab-panel.active { display: block; }
+
+/* ── Tab bar ── */
+#tab-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: var(--tab-h);
+    background: #0f172a;
+    display: flex;
+    border-top: 1px solid var(--border);
+    z-index: 100;
+}
+
+.tab-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tab-btn svg { width: 22px; height: 22px; stroke-width: 1.8; }
+
+.tab-btn.active {
+    color: var(--cyan);
+}
+
+/* ── Cards ── */
+.card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+}
+
+.card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+/* ── Vital value display ── */
+.vital-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: var(--touch);
+    margin-bottom: 2px;
+}
+
+.vital-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    min-width: 90px;
+}
+
+.vital-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    justify-content: flex-end;
+}
+
+.vital-value {
+    font-size: 22px;
+    font-weight: 700;
+    min-width: 56px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.vital-unit {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 28px;
+}
+
+/* Colour-code value families */
+.cardiac  .vital-value { color: var(--green); }
+.resp     .vital-value { color: var(--cyan); }
+.general  .vital-value { color: var(--amber); }
+
+/* ── Stepper buttons ── */
+.step-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.1s, transform 0.1s;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+}
+
+.step-btn:active {
+    background: #4b5563;
+    transform: scale(0.94);
+}
+
+/* ── Select dropdowns ── */
+.remote-select {
+    width: 100%;
+    height: var(--touch);
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 15px;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239ca3af' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+    cursor: pointer;
+}
+
+.remote-select:focus { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.select-row {
+    margin-bottom: 10px;
+}
+
+.select-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+
+/* ── Volume slider ── */
+.volume-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.volume-row label {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 52px;
+}
+
+input[type=range] {
+    flex: 1;
+    height: 6px;
+    accent-color: var(--cyan);
+    cursor: pointer;
+}
+
+/* ── Scenario panel ── */
+#scenario-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    margin-bottom: 10px;
+}
+
+#scenario-info-left { flex: 1; min-width: 0; }
+
+/* Scenario name: small label (secondary) */
+#scenario-name-display {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Scene name: large primary display */
+#scene-info {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 3px;
+    line-height: 1.2;
+}
+/* Dim the scene-info when no scene is active */
+#scene-info:empty::after {
+    content: '—';
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 400;
+}
+
+#scenario-state-badge {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    align-self: flex-start;
+    margin-top: 2px;
+}
+#scenario-state-badge.running  { background: var(--green-dim);  color: var(--green); }
+#scenario-state-badge.paused   { background: var(--amber-dim);  color: var(--amber); }
+#scenario-state-badge.stopped  { background: var(--bg-input);   color: var(--text-muted); }
+
+/* ── Big action buttons ── */
+.action-btn {
+    width: 100%;
+    height: 52px;
+    border-radius: 10px;
+    border: none;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+    margin-bottom: 8px;
+    -webkit-tap-highlight-color: transparent;
+}
+.action-btn:active { transform: scale(0.97); filter: brightness(0.85); }
+
+.btn-start     { background: var(--green);   color: #000; }
+.btn-pause     { background: var(--amber);   color: #000; }
+.btn-terminate { background: var(--red);     color: #fff; }
+.btn-event     { background: var(--purple);  color: #fff; margin-top: 6px; }
+.btn-gray      { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* ── Quick action buttons (CC / Breath / Defib) ── */
+.quick-btn {
+    font-size: 15px;
+    font-weight: 700;
+    height: 60px;
+    letter-spacing: 0.02em;
+}
+
+/* CC — neutral when off; green-pulsing when active compressions running */
+#btn-cc          { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border); }
+#btn-cc.cc-active {
+    background: var(--green);
+    color: #000;
+    border: none;
+    animation: cc-pulse 0.9s ease-in-out infinite;
+}
+@keyframes cc-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.65; }
+}
+
+/* Breath — cyan */
+.btn-breath { background: var(--cyan); color: #000; }
+
+/* Defib — red */
+.btn-defib  { background: var(--red); color: #fff; }
+
+.btn-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.btn-row .action-btn { margin-bottom: 0; }
+
+/* ── Comment / Log panel ── */
+#comment-input {
+    width: 100%;
+    height: 80px;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 15px;
+    resize: none;
+    font-family: inherit;
+    margin-bottom: 8px;
+}
+#comment-input:focus { outline: 2px solid var(--cyan); outline-offset: 2px; }
+#comment-input::placeholder { color: var(--text-dim); }
+
+/* ── Tablet layout (≥ 700px) ── */
+@media (min-width: 700px) {
+    .tab-panel { padding: 16px; }
+
+    /* Two-column grid for vitals cards */
+    .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .grid-2 .card { margin-bottom: 0; }
+
+    /* Wider step buttons on tablet */
+    .step-btn { width: 46px; height: 46px; font-size: 20px; }
+
+    .vital-value { font-size: 26px; }
+}
+
+/* ── Landscape phone (≥ 600px wide, short) ── */
+@media (min-height: 1px) and (max-height: 450px) {
+    :root { --header-h: 42px; --tab-h: 50px; }
+    .card { padding: 10px 14px; }
+    .vital-value { font-size: 20px; }
+}
+
+/* ── Divider ── */
+.divider {
+    height: 1px;
+    background: var(--border);
+    margin: 10px 0;
+}
+
+/* ── Staged-value live indicator ── */
+/* Replaces .vital-value when we need a live-server readout below it */
+.vital-value-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 56px;
+}
+
+.live-val {
+    font-size: 10px;
+    color: var(--amber);
+    min-height: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
+/* ── Transfer-time + Apply row ── */
+.apply-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.apply-row .remote-select {
+    flex: 1;
+    min-width: 0;
+}
+
+.apply-btn {
+    flex-shrink: 0;
+    width: 76px;
+    height: var(--touch);
+    background: var(--cyan);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: filter 0.1s, transform 0.1s;
+}
+
+.apply-btn:active {
+    filter: brightness(0.82);
+    transform: scale(0.95);
+}
+
+/* Card highlight when there are pending (un-applied) changes */
+.card.has-pending {
+    border-color: var(--amber);
+}
+
+.card.has-pending .apply-btn {
+    background: var(--amber);
+}
+
+/* ── Tappable value display ── */
+/* Value wraps and the temperature span are clickable to open the editor */
+.vital-value-wrap {
+    cursor: pointer;
+    border-radius: 6px;
+    transition: opacity 0.1s;
+}
+.vital-value-wrap:active { opacity: 0.55; }
+
+/* Temperature uses a plain span (no wrap) */
+#val-temp { cursor: pointer; transition: opacity 0.1s; }
+#val-temp:active { opacity: 0.55; }
+
+/* ── Value editor modal ── */
+#value-editor-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+#value-editor-overlay.open { display: flex; }
+
+#value-editor-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 20px;
+    width: min(288px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.value-editor-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    text-align: center;
+}
+
+/* Input wrapper: position relative so unit can float inside */
+.value-editor-input-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.value-editor-input {
+    width: 100%;
+    height: 64px;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 2px solid var(--cyan);
+    border-radius: 10px;
+    padding: 0 52px 0 14px;   /* right padding leaves room for unit label */
+    font-size: 32px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    font-family: inherit;
+    /* Remove browser spinners */
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.value-editor-input::-webkit-outer-spin-button,
+.value-editor-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.value-editor-input:focus { outline: none; border-color: var(--cyan); }
+
+/* Unit floats inside the right side of the input */
+.value-editor-unit {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.value-editor-btns {
+    display: flex;
+    gap: 10px;
+}
+
+.value-editor-btn {
+    flex: 1;
+    height: 50px;
+    border: none;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: filter 0.1s, transform 0.1s;
+}
+.value-editor-btn:active { filter: brightness(0.82); transform: scale(0.96); }
+.value-editor-btn.cancel  { background: var(--bg-input); color: var(--text-muted); }
+.value-editor-btn.confirm { background: var(--cyan); color: #000; }
+
+/* Hint state: pre-filled value shown dimmed until user starts typing */
+.value-editor-input.hint { color: var(--text-dim); }
+
+/* ── Custom keypad ── */
+.keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.key-btn {
+    height: 52px;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 22px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.08s, transform 0.08s;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+}
+.key-btn:active {
+    background: #4b5563;
+    transform: scale(0.92);
+}
+
+/* Decimal point key — dimmed when not applicable */
+.key-btn.key-dot          { font-size: 26px; color: var(--text-muted); }
+.key-btn.key-dot.active   { color: var(--text); }
+
+/* Backspace key */
+.key-btn.key-del          { font-size: 20px; color: var(--red); }

@@ -96,7 +96,7 @@ async function stripReadOnly(dirPath) {
 //          files there, but we do it here too so launches always succeed even
 //          if the installer's xcopy failed silently on a particular machine).
 //
-const WEB_DIRS = ['sim-ii', 'sim-mgr', 'sim-ctl', 'sim-player'];
+const WEB_DIRS = ['sim-ii', 'sim-mgr', 'sim-ctl', 'sim-player', 'sim-remote'];
 
 async function initUserData() {
   if (!app.isPackaged) return;
