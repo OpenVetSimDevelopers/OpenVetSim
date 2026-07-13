@@ -462,6 +462,12 @@ using namespace std;
 
 int main(int argc, char* argv[])
 {
+	// Ignore SIGPIPE so that a write to a closed socket (e.g. a mobile browser
+	// that drops the connection mid-response) returns EPIPE to the caller
+	// instead of killing the process.  Without this, any phone/tablet that
+	// resets a TCP connection during a send() will terminate the whole binary.
+	signal(SIGPIPE, SIG_IGN);
+
 	int sts = checkProcessRunning();
 	if (sts == 0)
 	{

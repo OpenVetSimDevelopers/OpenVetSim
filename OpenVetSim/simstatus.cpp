@@ -156,6 +156,32 @@ simstatusMain(void)
 		cfd = accept(sfd, (struct sockaddr*)&client_addr, &socklen);
 		if (cfd >= 0)
 		{
+			// ── Per-connection socket options ─────────────────────────────
+			// Recv timeout: if a mobile browser pre-connects (TCP handshake
+			// completes) but delays the HTTP request, recv() would block
+			// indefinitely — preventing the server from accepting the next
+			// real request.  5 s is more than enough for any legitimate browser.
+#ifdef _WIN32
+			DWORD rcvMs = 5000, sndMs = 10000;
+			setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&rcvMs, sizeof(rcvMs));
+			setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&sndMs, sizeof(sndMs));
+#else
+			struct timeval tv_r = { 5, 0 };   // 5 s recv timeout
+			struct timeval tv_s = { 10, 0 };  // 10 s send timeout
+			setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv_r, sizeof(tv_r));
+			setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv_s, sizeof(tv_s));
+#endif
+			// Belt-and-suspenders: suppress SIGPIPE at socket level on
+			// macOS/BSD (signal(SIGPIPE, SIG_IGN) is set in main() but
+			// SO_NOSIGPIPE is more granular and applies even if the process
+			// signal mask is changed elsewhere).
+#ifdef SO_NOSIGPIPE
+			{
+				int nosig = 1;
+				setsockopt(cfd, SOL_SOCKET, SO_NOSIGPIPE, &nosig, sizeof(nosig));
+			}
+#endif
+
 			htmlReply.clear();
 
 			// Receive HTTP Header
@@ -311,25 +337,44 @@ simstatusMain(void)
 						sendNotFound(path);
 					}
 				}
-				// Send reply
-				//cout << "Returning\n------------\n" << htmlReply << "\n------------\n" << endl;
-				iSendResult = send(cfd,  htmlReply.c_str(), (int)htmlReply.length(),  0);
-				if (iSendResult == SOCKET_ERROR) {
-					printf("send failed: %d\n", WSAGetLastError());
-				}
-				else
+				// Send reply — loop to handle partial sends (required for
+				// large files; a single send() may transfer less than the
+				// full buffer if the socket send buffer fills up).
 				{
-					//printf("Bytes sent: %d\n", iSendResult);
+					const char* sendPtr = htmlReply.c_str();
+					int         sendLeft = (int)htmlReply.length();
+					while (sendLeft > 0)
+					{
+						iSendResult = send(cfd, sendPtr, sendLeft, 0);
+						if (iSendResult == SOCKET_ERROR)
+						{
+							printf("send failed: %d\n", WSAGetLastError());
+							break;
+						}
+						sendPtr  += iSendResult;
+						sendLeft -= iSendResult;
+					}
 				}
 			}
 			else if (iResult == 0)
 			{
 				//printf("Connection closing...\n");
 			}
-			else 
+			else
 			{
 				printf("recv failed: %d\n", WSAGetLastError());
 			}
+			// Graceful half-close: send FIN before releasing the socket.
+			// A bare closesocket() on a socket with unread data (e.g. a
+			// pipelined request from the browser) sends RST instead of FIN,
+			// which can arrive at the phone before the response data and
+			// discard it.  shutdown(SHUT_WR) queues our FIN after the
+			// response data already in the kernel send buffer.
+#ifdef _WIN32
+			shutdown(cfd, SD_SEND);
+#else
+			shutdown(cfd, SHUT_WR);
+#endif
 			closesocket(cfd);
 		}
 		if (closeFlag)

@@ -8,6 +8,7 @@ const path   = require('path');
 const { spawn, execSync } = require('child_process');
 const http   = require('http');
 const fs     = require('fs');
+const os     = require('os');
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 const PORT_STATUS = 40845;
@@ -161,6 +162,131 @@ async function initUserData() {
       }
     }
   }
+}
+
+// ─── Get best LAN IP for QR code / remote access ─────────────────────────────
+// Prefer primary named interfaces (en0/en1 on macOS, Ethernet/Wi-Fi on Windows)
+// so a VPN tunnel address doesn't shadow the real LAN address.
+function getLanIP() {
+  const ifaces = os.networkInterfaces();
+  const preferred = ['en0', 'en1', 'eth0', 'Ethernet', 'Wi-Fi', 'WLAN'];
+  for (const name of preferred) {
+    if (!ifaces[name]) continue;
+    for (const iface of ifaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  // Fallback: first non-loopback IPv4 from any interface
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of ifaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return null;
+}
+
+// ─── Show QR code window so phones/tablets can connect to sim-remote ──────────
+async function showRemoteQR() {
+  const ip = getLanIP();
+  if (!ip) {
+    dialog.showErrorBox(
+      'No Network Found',
+      'Could not detect a local network address.\nMake sure this computer is connected to Wi-Fi or Ethernet.'
+    );
+    return;
+  }
+
+  const remoteURL = `http://${ip}:40845/sim-remote/`;
+
+  let QRCode;
+  try { QRCode = require('qrcode'); }
+  catch {
+    dialog.showErrorBox('Missing Package', 'Run  npm install  in OpenVetSim-App/ to install the qrcode package.');
+    return;
+  }
+
+  const qrDataURL = await QRCode.toDataURL(remoteURL, {
+    width: 260,
+    margin: 1,
+    color: { dark: '#000000', light: '#ffffff' },
+  });
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #111827;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+    gap: 14px;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  h2 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #22d3ee;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .qr-box {
+    background: #fff;
+    padding: 10px;
+    border-radius: 10px;
+    line-height: 0;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+  .qr-box img { display: block; }
+  .url {
+    font-size: 11px;
+    font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+    color: #64748b;
+    text-align: center;
+    word-break: break-all;
+    max-width: 280px;
+  }
+  .hint {
+    font-size: 12px;
+    color: #475569;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<h2>OpenVetSim Remote</h2>
+<div class="qr-box"><img src="${qrDataURL}" width="260" height="260" alt="QR code"></div>
+<div class="url">${remoteURL}</div>
+<div class="hint">Scan with your phone or tablet camera</div>
+</body>
+</html>`;
+
+  const qrWin = new BrowserWindow({
+    width:        340,
+    height:       440,
+    resizable:    false,
+    minimizable:  false,
+    maximizable:  false,
+    alwaysOnTop:  true,
+    title:        'Connect Phone or Tablet',
+    backgroundColor: '#111827',
+    webPreferences: {
+      nodeIntegration:  false,
+      contextIsolation: true,
+    },
+  });
+
+  qrWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  qrWin.setMenu(null);
 }
 
 // ─── Globals ──────────────────────────────────────────────────────────────────
@@ -470,6 +596,7 @@ function buildMenu() {
     { label: 'Restart', accelerator: 'CmdOrCtrl+Shift+R', click: restartBinary },
     { type: 'separator' },
     { label: 'Open in Browser', click: () => shell.openExternal(PHP_URL) },
+    { label: 'Connect Phone or Tablet…', click: showRemoteQR },
     { type: 'separator' },
     {
       label: 'Copy Video Log Path',
