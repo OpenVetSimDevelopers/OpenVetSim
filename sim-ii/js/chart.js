@@ -832,7 +832,12 @@ See gpl.html
 			if(controls.cpr.inProgress == true) {
 				chart.ekg.rateIndex = 0;
 			} else if ( cardiac.rate <= 0 ) {
-//				chart.ekg.rhythmIndex = 'asystole';	// Flatline
+				// Rate is zero (pulseless rhythm such as asystole or vfib).
+				// Update activeWaveform so the draw loop uses the correct waveform for the
+				// current rhythm rather than whatever the previous rhythm left behind.
+				// updateEkgWaveform handles rate=0 safely (copies ref as-is); rhythms like
+				// vfib that have no rhythmRef return early and use their own draw path.
+				chart.updateEkgWaveform(chart.ekg.rhythmIndex, cardiac.rate);
 			} else {
 				// Reset vfib segment playback state whenever the rhythm switches to vfib.
 				if(chart.ekg.rhythmIndex === 'vfib') {

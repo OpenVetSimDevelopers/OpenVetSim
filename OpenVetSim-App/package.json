@@ -1,7 +1,7 @@
 {
   "name": "openvetsim",
   "productName": "OpenVetSim",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Open Veterinary Simulation Manager",
   "main": "main.js",
   "scripts": {
