@@ -65,6 +65,18 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 		}
 	?>
 	<script type="text/javascript">
+			// Embedded in the defibrillator tablet's screen (sim-remote/defib.html,
+			// "Full Student Monitor"): waveforms and numbers only. The monitor in
+			// the room already makes the sounds and shows any media, so this copy
+			// is silent and shows none.
+			if ( /[?&]embed=defib(&|$)/.test(location.search) ) {
+				document.documentElement.className += ' embed-defib';
+				HTMLMediaElement.prototype.play = function() { return Promise.resolve(); };
+				// A display only: never send anything to the simulator. A fresh
+				// tablet would otherwise, for one, push its own default
+				// temperature units (F) over the instructor's choice.
+				simmgr.sendChange = function() {};
+			}
 			var windowScaleFactor = 1;
 			
 			function doWindowScale( scaleFactor ) {			
@@ -183,6 +195,15 @@ console.log('telesim.imageNext[1]: ' + telesim.imageNext[1]);
 
 		</script>
 <style type="text/css" media="screen">
+  /* embedded in the defibrillator - see the script above */
+  html.embed-defib #media-overlay,
+  html.embed-defib #media-video {
+    display: none !important;
+  }
+  html.embed-defib, html.embed-defib body {
+    cursor: none;
+  }
+
   * {
     margin: 0px 0px 0px 0px;
     padding: 0px 0px 0px 0px;

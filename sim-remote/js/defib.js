@@ -31,6 +31,8 @@ var defib = {
 	MESSAGE_MS: 3500,			// how long a one-off status message stays up
 	BOOT_MS: 1400,				// power-on self test
 	POLL_MS: 500,				// simulator status poll, as sim-remote uses
+	CONFIG_MS: 3000,			// display-mode check (defib-config.json)
+	MONITOR_RETRY_MS: 15000,	// wait before retrying an unreachable monitor
 
 	// ---- energy -------------------------------------------------------------
 	// The manual biphasic ladder used by common clinical units. The low steps
@@ -46,6 +48,15 @@ var defib = {
 	poweredAt: 0,
 	messageTimer: 0,
 	wakeLock: null,
+
+	// display mode - set from the app's Simulator > Defibrillator Display menu
+	// through sim-remote/defib-config.json (see loadConfig)
+	display: 'ecg',				// 'ecg' = ECG only | 'monitor' = full student monitor
+	phpPort: 8081,				// where the student monitor page is served
+	monitorFrame: null,			// the embedded student monitor, while shown
+	monitorGen: 0,				// invalidates a probe that a later change overtook
+	monitorRetryAt: 0,			// after a failed probe, don't retry before this
+	monitorWarned: false,		// "unavailable" shown once per power-on / mode change
 
 	// status-adapter state
 	engineDefibLast: 0,			// defibrillation.last as last reported
@@ -75,6 +86,7 @@ var defib = {
 		setInterval(defib.tickElapsed, 1000);
 		defib.render();
 		defib.poll();
+		defib.loadConfig();
 	},
 
 	bind: function(id, fn) {
@@ -146,6 +158,9 @@ var defib = {
 		}
 
 		defib.setState('boot');
+		defib.monitorRetryAt = 0;
+		defib.monitorWarned = false;
+		defib.applyDisplay();		// the monitor loads behind the self test
 		document.getElementById('boot-result').textContent = '…';
 		defib.timers.boot = setTimeout(function() {
 			document.getElementById('boot-result').textContent = 'PASSED';
@@ -162,6 +177,7 @@ var defib = {
 		defib.clearTimers();
 		defibAudio.silence();
 		defib.releaseWakeLock();
+		defib.hideMonitor();
 		defib.setState('off');
 	},
 
@@ -316,6 +332,108 @@ var defib = {
 		chart.ekg.patternIndex = 0;
 		chart.ekg.rhythmIndex = 'defib';
 		defib.localShockUntil = Date.now() + 2300;		// the simulator holds it for 2 s
+	},
+
+	// =========================================================================
+	// Display mode: ECG only, or the full student monitor
+	//
+	// The app writes sim-remote/defib-config.json when the simulator starts and
+	// whenever the menu setting changes; it is re-read every few seconds so a
+	// tablet that is already connected follows the change. No file (an older
+	// app, or the page opened some other way) means ECG only.
+	//
+	// "Full student monitor" embeds the student monitor page (sim-ii/vitals.php,
+	// served by the computer's PHP server) rather than redrawing it here, so it
+	// can never drift from the monitor in the room. vitals.php keeps that copy
+	// silent and hides media (?embed=defib). The defibrillator's own ECG keeps
+	// running underneath, so switching back is instant.
+	// =========================================================================
+	loadConfig: function() {
+		fetch('defib-config.json', { cache: 'no-store' })
+			.then(function(r) { return r.ok ? r.json() : null; })
+			.then(function(cfg) {
+				cfg = cfg || {};
+				var mode = (cfg.display === 'monitor') ? 'monitor' : 'ecg';
+				var port = parseInt(cfg.phpPort, 10);
+				if (port > 0 && port !== defib.phpPort) {
+					defib.phpPort = port;
+					defib.hideMonitor();	// re-created on the new port below
+				}
+				if (mode !== defib.display) {
+					defib.display = mode;
+					defib.monitorRetryAt = 0;
+					defib.monitorWarned = false;
+				}
+				defib.applyDisplay();
+			})
+			.catch(function() { /* keep the current mode */ })
+			.then(function() {
+				setTimeout(defib.loadConfig, defib.CONFIG_MS);
+			});
+	},
+
+	applyDisplay: function() {
+		if (defib.display === 'monitor' && defib.isOn()) {
+			defib.showMonitor();
+		} else {
+			defib.hideMonitor();
+		}
+	},
+
+	monitorUrl: function(path) {
+		return 'http://' + location.hostname + ':' + defib.phpPort + path;
+	},
+
+	showMonitor: function() {
+		if (defib.monitorFrame || Date.now() < defib.monitorRetryAt) { return; }
+		var gen = ++defib.monitorGen;
+		defib.monitorRetryAt = Date.now() + defib.MONITOR_RETRY_MS;	// one probe at a time
+
+		// Check the computer's web server answers before showing the frame: if
+		// the tablet can't reach it, a browser error page in the screen would be
+		// worse than the plain ECG.
+		fetch(defib.monitorUrl('/sim-ii/css/common.css'), { mode: 'no-cors', cache: 'no-store' })
+			.then(function() {
+				if (gen !== defib.monitorGen || defib.display !== 'monitor' || !defib.isOn()) { return; }
+				var f = document.createElement('iframe');
+				f.title = 'Student monitor';
+				f.setAttribute('tabindex', '-1');
+				f.src = defib.monitorUrl('/sim-ii/vitals.php?embed=defib');
+				document.getElementById('monitor-slot').appendChild(f);
+				defib.monitorFrame = f;
+				defib.monitorRetryAt = 0;
+				document.getElementById('device').classList.add('display-monitor');
+			})
+			.catch(function() {
+				if (gen !== defib.monitorGen) { return; }
+				// stays on the ECG and is retried after MONITOR_RETRY_MS; say so once,
+				// and never over a charge in progress
+				if (defib.monitorWarned) { return; }
+				defib.monitorWarned = true;
+				defib.afterBoot(function() {
+					if (defib.state === 'idle') { defib.message('MONITOR UNAVAILABLE · ECG ONLY', 'msg-alert'); }
+				});
+			});
+	},
+
+	hideMonitor: function() {
+		defib.monitorGen++;			// abandon any probe in flight
+		if (defib.monitorFrame) {
+			defib.monitorFrame.src = 'about:blank';	// stop its polling at once
+			defib.monitorFrame.parentNode.removeChild(defib.monitorFrame);
+			defib.monitorFrame = null;
+		}
+		var dev = document.getElementById('device');
+		if (dev.classList.contains('display-monitor')) {
+			dev.classList.remove('display-monitor');
+			chart.handleResize();	// the ECG row is back in the layout
+		}
+	},
+
+	// Run fn now, or once the power-on self test has finished.
+	afterBoot: function(fn) {
+		if (defib.state !== 'boot') { if (defib.isOn()) { fn(); } return; }
+		setTimeout(function() { defib.afterBoot(fn); }, 300);
 	},
 
 	// =========================================================================

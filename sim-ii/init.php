@@ -36,7 +36,12 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	{
 		if ( key_exists('NO_DB', $_SESSION ) ||
 			( key_exists('OS', $_SERVER) && strncmp($_SERVER['OS'], "Windows", 7 ) == 0  ) ||
-			( key_exists('SERVER_SOFTWARE', $_SERVER) && strncmp($_SERVER['SERVER_SOFTWARE'], "PHP ", 4 ) == 0 ) ||
+			// PHP's built-in server ("php -S", which the simulator runs) reports
+			// itself as "PHP/8.x.y (Development Server)". This used to test for
+			// "PHP " with a space, which never matched, so only requests from
+			// 127.0.0.1 got here and any other device - a student monitor or the
+			// defibrillator tablet - was sent to a cgi-bin path that doesn't exist.
+			( key_exists('SERVER_SOFTWARE', $_SERVER) && preg_match('#^PHP[/ ]#', $_SERVER['SERVER_SOFTWARE']) ) ||
 			( array_key_exists('REMOTE_ADDR', $_SERVER) && $_SERVER['REMOTE_ADDR'] === '127.0.0.1' ) )
 		{
 			$noDB = TRUE;

@@ -174,6 +174,34 @@ body {
 /* controls.js appends its own " bpm"; this screen prints the unit separately */
 #vs-heartRhythm .vs-upper-label { display: none; }
 
+/* Full student monitor mode: the embedded monitor takes the ECG row's place.
+   The ECG row is hidden but keeps its size - with display:none chart.js would
+   measure a zero-width frame and keep retrying its layout - so switching back
+   to ECG only is immediate. */
+.monitor-slot {
+	display: none;
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	background: #000;
+}
+.monitor-slot iframe {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	border: 0;
+	background: #000;
+	pointer-events: none;	/* a display, not a control: taps go nowhere */
+}
+.device.display-monitor .ecg-row {
+	position: absolute;
+	inset: 0;
+	visibility: hidden;
+}
+.device.display-monitor .monitor-slot { display: block; }
+.device.display-monitor .lead-tag { display: none; }
+
 /* Status band */
 .screen-bottom {
 	display: grid;

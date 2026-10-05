@@ -209,6 +209,62 @@ function getLanIP() {
   return null;
 }
 
+// ─── Persistent app settings ─────────────────────────────────────────────────
+// A small JSON file in Electron's userData folder. That is outside the web
+// folders initUserData() replaces on every launch, so settings survive restarts
+// and app updates.
+const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'openvetsim-settings.json');
+const SETTINGS_DEFAULTS = {
+  defibDisplay: 'ecg',      // 'ecg' = ECG only | 'monitor' = full student monitor
+};
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(SETTINGS_FILE(), 'utf8'));
+    return Object.assign({}, SETTINGS_DEFAULTS, saved);
+  } catch {
+    return Object.assign({}, SETTINGS_DEFAULTS);
+  }
+}
+
+function saveSetting(key, value) {
+  const settings = loadSettings();
+  settings[key] = value;
+  try {
+    fs.mkdirSync(path.dirname(SETTINGS_FILE()), { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(settings, null, 2));
+  } catch (e) {
+    console.warn('[settings] could not save:', e.message);
+  }
+}
+
+// ─── Defibrillator display mode ───────────────────────────────────────────────
+// The defibrillator tablet (sim-remote/defib.html) reads its display mode from
+// sim-remote/defib-config.json, which the simulator serves like any other
+// sim-remote file. The tablet re-reads it every few seconds, so changing the
+// menu setting switches a tablet that is already connected.
+//
+// The file is generated - never edit or commit it. It is rewritten each time the
+// simulator starts, because initUserData() replaces the sim-remote folder on
+// every launch of the packaged app.
+function writeDefibConfig() {
+  const file = path.join(getHtmlPath(), 'sim-remote', 'defib-config.json');
+  const config = {
+    display: loadSettings().defibDisplay === 'monitor' ? 'monitor' : 'ecg',
+    phpPort: PORT_PHP,        // where the tablet finds the student monitor page
+  };
+  try {
+    fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
+  } catch (e) {
+    console.warn('[defib] could not write defib-config.json:', e.message);
+  }
+}
+
+function setDefibDisplay(mode) {
+  saveSetting('defibDisplay', mode);
+  writeDefibConfig();
+}
+
 // ─── Show a QR code window so a phone or tablet can open a page ──────────────
 // Both pages are served by the simulator itself on port 40845, so they work
 // from any device on the same network without the PHP server, which only
@@ -448,6 +504,7 @@ function startBinary() {
   if (simProcess) return;
 
   notifyState('starting');
+  writeDefibConfig();   // the web files are in place by now (see app.whenReady)
 
   // Kill any orphaned binary from a previous Electron session, then wait
   // briefly for its ports to be released before spawning a new instance.
@@ -780,6 +837,17 @@ function buildMenu() {
     { label: 'Open in Browser', click: () => shell.openExternal(PHP_URL) },
     { label: 'Connect Phone or Tablet…', click: showRemoteQR },
     { label: 'Connect Defibrillator…',   click: showDefibQR  },
+    {
+      label: 'Defibrillator Display',
+      submenu: [
+        { label: 'ECG Only',             type: 'radio',
+          checked: loadSettings().defibDisplay !== 'monitor',
+          click: () => setDefibDisplay('ecg') },
+        { label: 'Full Student Monitor', type: 'radio',
+          checked: loadSettings().defibDisplay === 'monitor',
+          click: () => setDefibDisplay('monitor') },
+      ],
+    },
     { type: 'separator' },
     {
       label: 'Survey Sim Controller…',

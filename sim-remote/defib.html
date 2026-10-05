@@ -19,8 +19,8 @@
     <div class="screen" id="screen">
 
       <header class="screen-top">
-        <span class="tag">II</span>
-        <span class="tag">x1.0</span>
+        <span class="tag lead-tag">II</span>
+        <span class="tag lead-tag">x1.0</span>
         <span class="tag">MANUAL</span>
         <span class="spacer"></span>
         <span class="link" id="link"><i></i><span id="link-label">SIM LINK</span></span>
@@ -50,6 +50,12 @@
           <span class="hr-unit">bpm</span>
         </div>
       </div>
+
+      <!-- Full student monitor (the app's Simulator > Defibrillator Display
+           setting). This is the student monitor page itself, embedded, so it
+           always matches the monitor in the room. defib.js adds the frame at
+           power-on in that mode and removes it at power-off. -->
+      <div class="monitor-slot" id="monitor-slot"></div>
 
       <footer class="screen-bottom">
         <div class="readout energy-readout">
