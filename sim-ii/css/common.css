@@ -215,16 +215,21 @@ a:hover {
 	color: #FFFFFF;
 }
 
+/* The left-column boxes - avatar, sensor row, scenario and media select - all
+   share the avatar frame's outer width, and the two selects and their buttons
+   line up in columns: 240px select, 30px gap, 120px button = 390px inside. */
 #scenario-select {
 	padding: 5px;
 	margin-top: 10px;
-	width: 387px;
+	box-sizing: border-box;
+	width: 402px;
 }
 	#scenario-select select{
 		margin: 7px 0 0 0;
+		width: 240px;
 	}
 	#scenario-button{
-		margin: 0px 0 0 58px;
+		margin: 0px 0 0 30px;
 		width: 120px;
 	}
 	#scenario-terminate-button{
@@ -252,13 +257,16 @@ a:hover {
 
 #media-select {
 	padding: 5px 5px 10px 5px;
-	margin-top: 10px
+	margin-top: 10px;
+	box-sizing: border-box;
+	width: 402px;
 }
 	#media-select select{
 		margin: 7px 0 0 0;
+		width: 240px;
 	}
 	#media-button{
-		margin: 0px 0 0 10px;
+		margin: 0px 0 0 30px;
 		width: 120px;
 	}
 #media-overlay {
@@ -299,6 +307,80 @@ a:hover {
 }
 
 /* mannequin */
+/* The mannequin keeps its original 500x400 coordinate space - a dozen
+   dog-control hotspots are positioned against it - and is scaled as a whole so
+   the monitor can have more of the fixed 1220px row. Transforms preserve hit
+   testing, so every hotspot still lands where it looks. */
+/* Instructor page, left column: the avatar, its sensor row, and the scenario and
+   media controls, stacked. As separate floats the scenario controls had to clear
+   the vitals monitor beside them, which is taller than the avatar, and that left
+   a gap under the avatar. In one column they follow straight on. */
+#ii-left-col {
+	float: left;
+	clear: both;
+}
+	#ii-left-col > #media-col {
+		clear: both;
+	}
+
+/* Instructor page, right column: the monitor, then the event log and the
+   comment box, each the monitor's outer width (750px + 1px borders = 752px)
+   and on the same left edge. */
+#ii-right-col {
+	float: left;
+	width: 762px;
+}
+
+/* The sensor buttons, in a row under the avatar rather than over the dog. Laid out
+   here, so a scenario's <control> left/top for these ids has no effect (the
+   buttons are no longer positioned); its <title> still sets the label. */
+#sensor-bar {
+	float: left;
+	clear: both;
+	width: 402px;
+	margin-top: 10px;
+	padding: 6px 8px 8px;
+	box-sizing: border-box;
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-end;
+	background: #ffffff;
+}
+	#sensor-bar .sensor {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 3px;
+	}
+	#sensor-bar .nvs-button {
+		position: static;
+	}
+	#sensor-bar h2.nvs-button {
+		margin: 0;
+		font-size: 13px;
+		line-height: 1.15;
+		white-space: nowrap;
+	}
+	#sensor-bar img.nvs-button {
+		width: 46px;
+		height: 46px;
+	}
+
+/* Pulse / Comps labels sit at the right edge of the avatar; keep each on one line. */
+#mannequin h2.nvs-button {
+	white-space: nowrap;
+}
+
+#mannequin-frame {
+	width: 400px;
+	height: 320px;
+	position: relative;
+	overflow: hidden;
+}
+	#mannequin-frame > #mannequin {
+		transform: scale(0.8);
+		transform-origin: top left;
+	}
 #mannequin {
 	height: 400px;
 	width: 500px;
@@ -375,13 +457,56 @@ div.telesim-right video {
 }
 
 /* canvas */
+/* The monitor is a fixed 16:9 design canvas. chart.fitToFrame() scales it to
+   whatever space it is given and sizes #vsm-frame to the scaled footprint, so
+   the surrounding page sees an ordinary block of the right size. Everything
+   inside #vsm is positioned in design pixels and never needs to know how big
+   the display is. */
+#vsm-frame {
+	position: relative;
+	overflow: hidden;
+	margin: 0 0 0 10px;
+	/* Instructor slot. #sitewrapper is 1220px with 20px padding, so the row has
+	   1180px of content width. With the mannequin frame at 402px outer plus two
+	   10px margins, this is the largest the monitor can be without wrapping:
+	       10 + 402 + 10 + 752 = 1174 <= 1180
+	   Shrinking the mannequin further (scale 0.68) would allow 800px here. */
+	width: 750px;
+	background: #000000;
+}
 #vsm {
 	background: #000000;
-	height: 400px;
-	width: 650px;
-	margin: 0 0 0 10px;
+	width: 1280px;
+	height: 720px;
 	position: relative;
+	transform-origin: top left;
 }
+
+/* Student vitals monitor: fit the window - full screen or not - letterboxed on
+   black when it is not 16:9. chart.fitToFrame() sizes #vsm-frame to the scaled
+   monitor and it is centred with auto margins.
+
+   Deliberately NOT a flex container: a flex item wider than its container
+   overflows equally on both sides and the left of it becomes unreachable, so a
+   bad scale would hide the monitor completely instead of showing it clipped.
+   Auto margins collapse to zero when the item is too wide, which fails visibly.
+   Also avoids :has(), which not every embedded browser build supports. */
+body.vs-fullscreen {
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+	background: #000000;
+	/* Exactly the viewport, never taller: with min-height the frame's centring
+	   margin collapsed through the body and made the document taller than the
+	   window. flow-root establishes a block formatting context so that margin
+	   stays inside. */
+	height: 100vh;
+	box-sizing: border-box;
+	display: flow-root;
+}
+	body.vs-fullscreen #vsm-frame {
+		margin: 0 auto;
+	}
 	#vsm h1{
 		color: #FFFFFF;
 		margin: 5px 20px 0 0;
@@ -392,16 +517,8 @@ div.telesim-right video {
 	.vs-trace {
 		cursor: pointer;
 	}
-	#vs-trace-1 {
-		position: absolute;
-		top: 15px;
-		left: 0px;
-	}
-	#vs-trace-2 {
-		position: absolute;
-		top: 145px;
-		left: 0px;
-	}
+	/* Strip positions come from chart.applyLayout(), which divides the waveform
+	   area among however many channels are enabled. Nothing is pinned here. */
 	
 	div.control-rate {
 		float: left;
@@ -417,9 +534,12 @@ div.telesim-right video {
 	
 /* events */
 #event-monitor {
+	float: left;
+	clear: both;
 	height: 168px;
-	width: 750px;
-	margin: 10px 7px 0 0;
+	box-sizing: border-box;
+	width: 752px;
+	margin: 10px 0 0 10px;
 	padding-left: 5px;
 	overflow-x: hidden;
 	overflow-y: scroll;
@@ -438,19 +558,30 @@ div.telesim-right video {
 		}
 		
 #comment-box {
-	margin: 10px 0 0 6px;
+	clear: both;
+	box-sizing: border-box;
+	width: 752px;
+	margin: 10px 0 0 10px;
 	padding: 0 10px 0 10px;
 	height: 50px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
 }
 	#comment-input {
-		margin: 10px 0 0 0px;
-		float: left;
-		height: 25px;
-		width: 400px;
-		padding: 0 5px 0 5px;
+		margin: 0;
+		float: none;
+		flex: 1 1 auto;
+		min-width: 0;
+		box-sizing: border-box;
+		height: 30px;
+		padding: 0 8px;
 	}
 	#comment-button {
-		margin: 8px 0 0 10px;
+		margin: 0;
+		float: none;
+		flex: 0 0 auto;
+		width: 120px;
 		padding: 5px;
 		background-color: green;
 		border: 1px solid green;

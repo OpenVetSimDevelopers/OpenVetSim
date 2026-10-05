@@ -77,6 +77,50 @@
             <span class="vital-unit">mmHg</span>
           </div>
         </div>
+
+        <div class="divider"></div>
+
+        <div class="select-row">
+          <div class="select-label">Arterial Waveform</div>
+          <select class="remote-select" id="sel-abpwave" onchange="remote.send({'set:cardiac:abp_waveform': this.value})">
+            <option value="normal">Normal</option>
+            <option value="overdamped">Overdamped (reads narrow)</option>
+            <option value="underdamped">Underdamped (reads wide)</option>
+            <option value="poor">Poor Perfusion</option>
+            <option value="cpr">CPR Compressions</option>
+          </select>
+        </div>
+
+        <div class="select-row">
+          <div class="select-label">Arterial Line</div>
+          <select class="remote-select" id="sel-abpline" onchange="remote.send({'set:cardiac:abp_line': this.value})">
+            <option value="0">Not placed</option>
+            <option value="1">Placed / zeroed</option>
+          </select>
+        </div>
+
+        <!-- PA catheter. Placement and tip position only: the right heart
+             pressures are scenario authoring and are set from the instructor
+             interface. Advancing the position here is what floats the catheter
+             during a session. -->
+        <div class="select-row">
+          <div class="select-label">PA Catheter</div>
+          <select class="remote-select" id="sel-pacplaced" onchange="remote.send({'set:cardiac:pac_placed': this.value})">
+            <option value="0">Not placed</option>
+            <option value="1">Placed</option>
+          </select>
+        </div>
+
+        <div class="select-row">
+          <div class="select-label">PAC Tip Position</div>
+          <select class="remote-select" id="sel-pacposition" onchange="remote.send({'set:cardiac:pac_position': this.value})">
+            <option value="cvp">CVP / Vena Cava</option>
+            <option value="ra">Right Atrium</option>
+            <option value="rv">Right Ventricle</option>
+            <option value="pa">Pulmonary Artery</option>
+            <option value="wedge">Wedge (PAWP)</option>
+          </select>
+        </div>
       </div>
 
       <!-- Respiratory card -->
@@ -114,6 +158,15 @@
         </div>
 
         <div class="divider"></div>
+
+        <div class="select-row">
+          <div class="select-label">Pleth Waveform</div>
+          <select class="remote-select" id="sel-plethwave" onchange="remote.send({'set:respiration:spo2_waveform': this.value})">
+            <option value="normal">Normal</option>
+            <option value="poor">Poor Perfusion</option>
+            <option value="artifact">Artifact / No Signal</option>
+          </select>
+        </div>
 
         <div class="select-row">
           <div class="select-label">ETCO₂ Waveform</div>

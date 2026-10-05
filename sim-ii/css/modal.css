@@ -69,6 +69,52 @@ See gpl.html
 		height: 45px;
 		width: 345px;
 	}
+		/* The 45px above is a fixed row height, which is right for a slider or a
+		   select on its own. A block carrying explanatory text or a checkbox needs
+		   to size to its content instead, or it overflows into the next section. */
+		.control-modal-div.modal-block-auto {
+			height: auto;
+			min-height: 45px;
+			overflow: hidden;
+			padding-bottom: 10px;
+		}
+			.modal-note {
+				font-size: 12px;
+				line-height: 1.4;
+				color: #555555;
+				margin: 8px 10px 0 10px;
+				clear: both;
+			}
+			/* A labelled numeric field. The PA catheter dialog sets six pressures,
+			   which is more than a stack of sliders can carry in a 345px block, so
+			   they are typed rather than dragged. */
+			.modal-field-row {
+				clear: both;
+				overflow: hidden;
+				margin: 6px 10px 0 10px;
+			}
+				.modal-field-label {
+					float: left;
+					font-size: 14px;
+					line-height: 24px;
+				}
+				input.modal-number {
+					float: right;
+					width: 64px;
+					font-size: 14px;
+					text-align: right;
+					padding: 2px 4px;
+				}
+			.modal-checkbox-label {
+				font-size: 15px;
+				display: block;
+				margin: 8px 0 0 0;
+				clear: both;
+			}
+				.modal-checkbox-label input {
+					vertical-align: middle;
+					margin-right: 6px;
+				}
 		.control-modal-div .sub-control {
 			float: left;
 			width: 50%;

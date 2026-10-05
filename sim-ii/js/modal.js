@@ -391,6 +391,115 @@ See gpl.html
 			});
 		},
 		
+		// Plethysmograph waveform morphology. The SpO2 value itself is set from
+		// the SpO2 control; this dialog only chooses the shape of the trace.
+		plethWaveform: function() {
+			$.ajax({
+				url: BROWSER_AJAX + 'ajaxGetPlethWaveformContent.php',
+				type: 'post',
+				async: false,
+				data: {
+					currentWaveform: (controls.SpO2 && controls.SpO2.waveformType) ? controls.SpO2.waveformType : 'normal'
+				},
+				dataType: 'json',
+				success: function(response) {
+					if(response.status == AJAX_STATUS_OK) {
+						modal.showModal(response);
+						modal.bindCloseModal();
+
+						$('.modal-button.apply').click(function() {
+							var waveform = $('select.pleth-waveform-select option:selected').val();
+							simmgr.sendChange({
+								'set:respiration:spo2_waveform': waveform
+							});
+							modal.closeModal();
+						});
+					}
+				}
+			});
+		},
+
+		// Arterial blood pressure: waveform morphology and arterial line state.
+		// The pressures themselves come from the NIBP control - the arterial line
+		// reads the same cardiac.bps_sys / bps_dia continuously.
+		abpWaveform: function() {
+			$.ajax({
+				url: BROWSER_AJAX + 'ajaxGetABPWaveformContent.php',
+				type: 'post',
+				async: false,
+				data: {
+					currentWaveform: (controls.abp && controls.abp.waveformType) ? controls.abp.waveformType : 'normal',
+					lineConnected: (controls.abp && controls.abp.lineConnected) ? '1' : '0'
+				},
+				dataType: 'json',
+				success: function(response) {
+					if(response.status == AJAX_STATUS_OK) {
+						modal.showModal(response);
+						modal.bindCloseModal();
+
+						// bind apply button
+						$('.modal-button.apply').click(function() {
+							var waveform = $('select.abp-waveform-select option:selected').val();
+							var lineOn = $('.abp-line-check').is(':checked') ? 1 : 0;
+
+							simmgr.sendChange({
+								'set:cardiac:abp_waveform': waveform,
+								'set:cardiac:abp_line': lineOn
+							});
+							modal.closeModal();
+						});
+					}
+				}
+			});
+		},
+
+		// Pulmonary artery (Swan-Ganz) catheter: whether one is placed, where the
+		// tip is, and the right heart pressures. Unlike the arterial line these
+		// pressures are not set anywhere else - they belong to this catheter.
+		pacCatheter: function() {
+			var p = ( typeof controls !== 'undefined' && controls.pac ) ? controls.pac : null;
+			$.ajax({
+				url: BROWSER_AJAX + 'ajaxGetPACContent.php',
+				type: 'post',
+				async: false,
+				data: {
+					currentPosition: p ? p.position : 'cvp',
+					placed:    ( p && p.placed ) ? '1' : '0',
+					raMean:    p ? p.raMean    : 5,
+					rvSys:     p ? p.rvSys     : 25,
+					rvDia:     p ? p.rvDia     : 5,
+					paSys:     p ? p.paSys     : 25,
+					paDia:     p ? p.paDia     : 12,
+					wedgeMean: p ? p.wedgeMean : 9
+				},
+				dataType: 'json',
+				success: function(response) {
+					if(response.status == AJAX_STATUS_OK) {
+						modal.showModal(response);
+						modal.bindCloseModal();
+
+						$('.modal-button.apply').click(function() {
+							var num = function(sel, dflt) {
+								var v = parseInt( $(sel).val() );
+								return isNaN(v) ? dflt : v;
+							};
+							simmgr.sendChange({
+								'set:cardiac:pac_placed':     $('.pac-placed-check').is(':checked') ? 1 : 0,
+								'set:cardiac:pac_position':   $('select.pac-position-select option:selected').val(),
+								'set:cardiac:pac_ra_mean':    num('.pac-ra-mean', 5),
+								'set:cardiac:pac_rv_sys':     num('.pac-rv-sys', 25),
+								'set:cardiac:pac_rv_dia':     num('.pac-rv-dia', 5),
+								'set:cardiac:pac_pa_sys':     num('.pac-pa-sys', 25),
+								'set:cardiac:pac_pa_dia':     num('.pac-pa-dia', 12),
+								'set:cardiac:pac_wedge_mean': num('.pac-wedge-mean', 9)
+							});
+							modal.closeModal();
+						});
+					}
+				}
+			});
+		},
+
 		respRhythm: function() {
 			$.ajax({
 				url: BROWSER_AJAX + 'ajaxGetEtCO2WaveformContent.php',

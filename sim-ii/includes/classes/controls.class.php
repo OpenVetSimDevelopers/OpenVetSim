@@ -118,6 +118,40 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 			return $pulseContent;
 		}
 		
+		// Arterial pressure morphologies.
+		//   normal / poor / cpr  - physiological states: the monitor reports the
+		//                          systolic and diastolic that were set.
+		//   overdamped/underdamped - measurement artifacts: the displayed numbers
+		//                          deviate, which is the point of them.
+		private static $abpWaveformList = array(
+			array('value' => 'normal',       'name' => 'Normal'),
+			array('value' => 'overdamped',   'name' => 'Overdamped (reads narrow)'),
+			array('value' => 'underdamped',  'name' => 'Underdamped (reads wide)'),
+			array('value' => 'poor',         'name' => 'Poor Perfusion'),
+			array('value' => 'cpr',          'name' => 'CPR Compressions')
+		);
+
+		// Plethysmograph morphologies.
+		//   normal / poor  - a real pulse, drawn at full or reduced gain.
+		//   artifact       - no usable signal: no detectable pulse, or a probe
+		//                    placement that cannot read. Non-pulsatile by design.
+		private static $plethWaveformList = array(
+			array('value' => 'normal',    'name' => 'Normal'),
+			array('value' => 'poor',      'name' => 'Poor Perfusion'),
+			array('value' => 'artifact',  'name' => 'Artifact / No Signal')
+		);
+
+		// Pulmonary artery catheter tip positions, in the order a catheter is
+		// floated through them. The names are what the operator would call the
+		// trace they are looking at, which is the whole exercise.
+		private static $pacPositionList = array(
+			array('value' => 'cvp',   'name' => 'CVP / Vena Cava'),
+			array('value' => 'ra',    'name' => 'Right Atrium'),
+			array('value' => 'rv',    'name' => 'Right Ventricle'),
+			array('value' => 'pa',    'name' => 'Pulmonary Artery'),
+			array('value' => 'wedge', 'name' => 'Wedge (PAWP)')
+		);
+
 		private static $co2WaveformList = array(
 			array('value' => 'normal',       'name' => 'Normal'),
 			array('value' => 'rebreathing',  'name' => 'Rebreathing'),
@@ -131,6 +165,39 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 				$selected = ($currentWaveform == $wf['value']) ? ' selected="selected"' : '';
 				$content .= '
 					<option value="' . $wf['value'] . '"' . $selected . '>' . $wf['name'] . '</option>
+				';
+			}
+			return $content;
+		}
+
+		static public function getABPWaveformDropDown($currentWaveform) {
+			$content = '';
+			foreach(self::$abpWaveformList as $wf) {
+				$selected = ($currentWaveform == $wf['value']) ? ' selected="selected"' : '';
+				$content .= '
+					<option value="' . $wf['value'] . '"' . $selected . '>' . $wf['name'] . '</option>
+				';
+			}
+			return $content;
+		}
+
+		static public function getPlethWaveformDropDown($currentWaveform) {
+			$content = '';
+			foreach(self::$plethWaveformList as $wf) {
+				$selected = ($currentWaveform == $wf['value']) ? ' selected="selected"' : '';
+				$content .= '
+					<option value="' . $wf['value'] . '"' . $selected . '>' . $wf['name'] . '</option>
+				';
+			}
+			return $content;
+		}
+
+		static public function getPACPositionDropDown($currentPosition) {
+			$content = '';
+			foreach(self::$pacPositionList as $pos) {
+				$selected = ($currentPosition == $pos['value']) ? ' selected="selected"' : '';
+				$content .= '
+					<option value="' . $pos['value'] . '"' . $selected . '>' . $pos['name'] . '</option>
 				';
 			}
 			return $content;

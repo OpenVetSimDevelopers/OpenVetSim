@@ -92,6 +92,10 @@ See gpl.html
 			activeWaveform: [],		// currently rendered waveform, resampled to fit current heart rate
 			yOffset: 0,				// yOffset of trace
 			yDisplayOffset: 5,		// display y offset
+			baselineFraction: 0.68,	// The complex deflects mostly upward, so centring the
+									// baseline leaves the lower half of the strip empty.
+									// Sitting it lower centres the trace in the strip without
+									// touching any waveform amplitude.
 			xOffsetLeft: 24,		// left xOffset of trace - matches the resp strip so the
 									// two traces start at the same x (the resp strip needs
 									// the margin for the ETCO2 scale labels)
@@ -133,6 +137,12 @@ See gpl.html
 			rhythm: new Array,		// array of digitized rhythms
 			yOffset: 0,				// yOffset of trace
 			yDisplayOffset: 5,		// display y offset
+			baselineFraction: 0.73,	// A capnogram only rises from zero. With the zero
+									// line here and ETCO2_FULL_SCALE_PX below, a normal
+									// 35-40 mmHg trace is centred on the strip's midline,
+									// level with its readout, and the 50 mmHg gridline
+									// and label still clear the top of the strip.
+			etco2Scale: 50,			// full-scale mmHg currently shown (see etco2ScaleMax)
 			xOffsetLeft: 24,		// left xOffset of trace - also the ETCO2 scale label gutter
 			xOffsetRight: 0,		// right xOffset of trace
 			rhythmIndex: 'low',		// index of current rhythm being displayed
@@ -168,39 +178,681 @@ See gpl.html
 			scaleWasVisible: false		// ETCO2 scale visibility on the previous tick
 		},
 
-		// ETCO2 reference scale drawn behind the respiration (capnograph) trace.
-		// The waveform is scaled so that an ETCO2 of controls.etCO2.maxValue draws a
-		// peak of fullScaleAmplitude pixels above the zero line (see drawRespPixel:
-		// y = pattern * etCO2.value / etCO2.maxValue, where the 'high' pattern peaks
-		// at 62). Reference lines therefore land at value * fullScaleAmplitude /
-		// etCO2.maxValue pixels above zero, so they stay correct if either changes.
+		// arterial (direct/invasive) blood pressure strip parameters
+		abp: {
+			width: 0,				// width of strip in pixels
+			height: 125,			// height of strip in pixels (set by applyLayout)
+			id: 'vs-trace-3',		// id of canvas for strip
+			interval: 0,			// variable to hold interval instantiation
+			color: '#ff4d4d',		// colour of trace
+			waveform: {},			// normalised 0..1 morphology arrays, by type
+			waveformRange: {},		// {min, max, mean} of each array - drives the numerics
+			waveformDistorts: {},	// true where the morphology is a measurement artifact
+			yOffset: 0,				// yOffset of trace
+			yDisplayOffset: 5,		// display y offset
+			baselineFraction: 0.90,	// 0 mmHg sits near the floor of the strip, so the
+									// whole height carries pressure rather than half
+			xOffsetLeft: 24,		// left xOffset of trace - also the scale label gutter
+			xOffsetRight: 0,		// right xOffset of trace
+			ampScale: 1,			// set by applyLayout
+			xPos: 0,				// current x position on strip
+			// Same draw interval as the ECG strip. Both advance one pixel per tick,
+			// so a given moment sits at the same x on both traces and the pressure
+			// upstroke visibly trails its own QRS by the transit delay - which is
+			// what "synchronised with the ECG" has to mean on a swept display.
+			drawInterval: 15,		// interval in msec to display pixels
+			lastDisplayedY: 0,		// last displayed Y coordinate (with offsets)
+			stopFlag: false,		// stop flag
+			sampleCount: 120,		// resolution of the generated morphology arrays
+
+			// pulse state
+			pulseActive: false,		// a cardiac cycle is being drawn
+			pulseIndex: 0,			// tick within the current cycle
+			pulseLength: 0,			// ticks in the current cycle (the RR interval)
+			pendingDelay: -1,		// ticks until the queued pulse starts (-1 = none)
+			currentSys: 0,			// systolic captured at the start of this pulse
+			currentDia: 0,			// diastolic captured at the start of this pulse
+			lastNorm: 0,			// last normalised value, for the flatline decay
+			scaleWasVisible: false	// scale visibility on the previous tick
+		},
+
+		// pulse oximetry plethysmograph strip parameters
+		pleth: {
+			width: 0,				// width of strip in pixels
+			height: 125,			// height of strip in pixels (set by applyLayout)
+			id: 'vs-trace-4',		// id of canvas for strip
+			interval: 0,			// variable to hold interval instantiation
+			color: '#ffe14d',		// colour of trace - matches the SpO2 readout
+			waveform: {},			// normalised 0..1 morphology arrays, by type
+			yOffset: 0,				// yOffset of trace
+			yDisplayOffset: 5,		// display y offset
+			baselineFraction: 0.74,	// The trace is entirely positive-going. With the
+									// baseline here a normal pulse (PLETH_AMPLITUDE) is
+									// centred on the strip's midline, level with its
+									// readout, like the other channels.
+			xOffsetLeft: 24,		// left xOffset - kept equal to the other strips so
+									// all four traces start at the same x
+			xOffsetRight: 0,
+			ampScale: 1,			// set by applyLayout
+			xPos: 0,
+			drawInterval: 15,		// same time base as the ECG and arterial strips
+			lastDisplayedY: 0,
+			stopFlag: false,
+			sampleCount: 120,		// resolution of the generated morphology arrays
+
+			// pulse state, mirroring chart.abp
+			pulseActive: false,
+			pulseIndex: 0,
+			pulseLength: 0,
+			pendingDelay: -1,
+			lastNorm: 0,
+			noisePhase: 0,			// free-running phase for the artifact trace
+			scaleWasVisible: false
+		},
+
+		// pulmonary artery catheter strip parameters
 		//
-		// The strip is drawn one pixel column at a time and a cursor clears the
-		// column ahead, so the scale cannot simply be painted once — drawRespScale()
+		// Unlike the other pressure strip, this one is not always present: it exists
+		// only while a catheter is in the patient (controls.pac.placed), and the
+		// remaining channels re-divide the waveform area when it comes and goes.
+		// See chart.setChannelEnabled.
+		pac: {
+			width: 0,				// width of strip in pixels
+			height: 125,			// height of strip in pixels (set by applyLayout)
+			id: 'vs-trace-5',		// id of canvas for strip
+			interval: 0,			// variable to hold interval instantiation
+			color: '#66d9ff',		// colour of trace - red and yellow are taken
+			waveform: {},			// mmHg arrays by catheter position
+			waveformKey: '',		// pressures the arrays were generated from
+			yOffset: 0,				// yOffset of trace
+			yDisplayOffset: 5,		// display y offset
+			baselineFraction: 0.90,	// 0 mmHg near the floor, as on the arterial strip
+			xOffsetLeft: 24,		// left xOffset - kept equal to the other strips
+			xOffsetRight: 0,
+			ampScale: 1,			// set by applyLayout
+			xPos: 0,
+			drawInterval: 15,		// same time base as the ECG and arterial strips
+			lastDisplayedY: 0,
+			stopFlag: false,
+			sampleCount: 120,		// resolution of the generated morphology arrays
+
+			// pulse state, mirroring chart.abp
+			pulseActive: false,
+			pulseIndex: 0,
+			pulseLength: 0,
+			pendingDelay: -1,
+			currentWave: null,		// array captured at the start of this beat, so a
+									// pressure change part way through a cycle cannot
+									// distort the waveform in flight
+			lastMmHg: 0,			// last value drawn, held between beats
+			scaleWasVisible: false
+		},
+
+		// Pressure reaches a catheter tip inside the heart almost immediately - it is
+		// in the chamber generating the pressure - so this is much shorter than the
+		// arterial line's transit time to a peripheral artery.
+		PAC_TRANSIT_MSEC: 60,
+
+		// Pressure scale steps the PA catheter strip may auto-range through, in mmHg.
+		// A right heart runs at a fraction of systemic pressure, so a fixed 160 mmHg
+		// scale would squash every one of these traces into the bottom sixth of the
+		// strip and the a/c/v waves would be invisible.
+		PAC_SCALE_STEPS: [40, 60, 80, 100],
+
+		// Pulse transit time to a peripheral probe. Longer than the arterial line's,
+		// which is why the pleth upstroke visibly trails the pressure upstroke.
+		PLETH_TRANSIT_MSEC: 240,
+
+		// Capnograph display scale. The waveform code works in its own units - its
+		// patterns peak at 62 px for 100 mmHg, the top of the instructor's ETCO2
+		// range - which put a normal 35-45 mmHg in the bottom sixth of the strip.
+		// The display now auto-ranges like a clinical capnograph: the smallest of
+		// these full scales that holds the current value, drawn so that full scale
+		// reaches ETCO2_FULL_SCALE_PX above zero at the reference strip height (the
+		// same height the arterial pressure scale uses).
+		ETCO2_SCALE_STEPS: [50, 75, 100],
+		ETCO2_FULL_SCALE_PX: 88,
+
+		// How much of the strip each morphology uses, as a fraction of the strip's
+		// height. The plethysmograph has no calibrated units - a monitor draws it at
+		// whatever gain it chooses - so amplitude here is a teaching signal rather
+		// than a measurement: a poorly perfused patient gives a small, blunt trace.
+		// Normal matches the ECG complex, about 55% of the strip; poor and artifact
+		// keep their original proportions to it.
+		PLETH_AMPLITUDE: { normal: 0.55, poor: 0.18, artifact: 0.23 },
+
+		// Pulse transit time: the delay between the R wave and the arterial upstroke
+		// reaching the transducer. Roughly 120-180 ms in a medium dog.
+		ABP_TRANSIT_MSEC: 150,
+		// Compression rate used for the CPR morphology, which runs free of the ECG.
+		ABP_CPR_RATE: 110,
+
+		// Reference scale drawn behind a waveform trace (the ETCO2 gridlines, the
+		// ABP pressure scale). A strip's waveform is drawn so that a value of
+		// scale.maxValue() produces fullScaleAmplitude pixels of deflection above
+		// the zero line at the reference strip height, so a reference line lands at
+		//     value * fullScaleAmplitude * ampScale / maxValue
+		// pixels above zero. Both track the waveform automatically when the strip is
+		// resized or the value range changes.
+		//
+		// A strip is drawn one pixel column at a time with a cursor clearing the
+		// column ahead, so the scale cannot simply be painted once: drawStripScale()
 		// repaints whatever part of it falls inside the cleared band on every tick.
-		respScale: {
-			enabled: true,
-			fullScaleAmplitude: 62,	// pixels of deflection at controls.etCO2.maxValue
+		// The numeric labels live in the gutter left of xOffsetLeft, which the sweep
+		// never clears, so they only need repainting when the strip wraps.
+		//
+		// Per-strip scale configuration lives on the channel entry (chart.channels).
+		scaleStyle: {
 			zeroColor: '#6a6a6a',	// solid 1px baseline (waveform itself is 2px)
 			lineColor: '#4c4c4c',	// dotted 1px gridlines
 			labelColor: '#8c8c8c',
 			labelFont: '9px Verdana, sans-serif',
-			labelPad: 3,			// gap between the label and the start of the trace
-									// (the label gutter itself is chart.resp.xOffsetLeft)
+			labelPad: 3,			// gap between label and the start of the trace
+									// (the gutter itself is the strip's xOffsetLeft)
 			dashLength: 2,			// dotted gridline: 2px on ...
-			dashPeriod: 6,			// ... every 6px
-			// value in mmHg, whether to print the number next to the line
-			lines: [
-				{ value: 0,  label: true },
-				{ value: 25, label: true },
-				{ value: 50, label: true }
-			]
+			dashPeriod: 6			// ... every 6px
 		},
 
 		cursorWidth: 10,			// width of cursor in pixels
+		resizeTimer: 0,				// debounce handle for the window resize listener
+		refitPending: false,		// a re-fit is already queued
+
+		// ---------------------------------------------------------------------
+		// Waveform channels
+		//
+		// Every waveform array in this file is authored in pixels for a strip of
+		// REFERENCE_STRIP_HEIGHT. The layout manager divides a fixed waveform area
+		// among the enabled channels, so the actual strip height varies with how
+		// many are shown, and each strip carries an ampScale (height / reference)
+		// that drawXxxPixel applies to the value before adding the y offsets.
+		//
+		// At the reference height ampScale is exactly 1, so a two-channel monitor
+		// sized the traditional way renders bit-identically to before this existed.
+		//
+		// To add a waveform: append a channel here, give it a strip object (see
+		// chart.ekg / chart.resp / chart.abp) and a draw function, and add the
+		// canvas plus its readout div to the page. Nothing else needs to know how
+		// many channels there are.
+		// ---------------------------------------------------------------------
+		REFERENCE_STRIP_HEIGHT: 125,	// height the waveform arrays are authored for
+
+		// ---------------------------------------------------------------------
+		// Design canvas
+		//
+		// The monitor is laid out once at a fixed 16:9 logical size and then
+		// scaled to whatever space it is given: full screen on the student
+		// display (which must not scroll), a fixed slot on the instructor page.
+		// Every coordinate below is in design pixels; nothing in the layout
+		// depends on the size of the window it ends up in.
+		//
+		// fitToFrame() applies the scale as a CSS transform on #vsm and gives
+		// each canvas a backing store of designPixels * scale * devicePixelRatio,
+		// with a matching ctx.setTransform, so the traces render at the display's
+		// native resolution instead of being an upscaled bitmap. All drawing code
+		// continues to work in design pixels and needs no knowledge of this.
+		// ---------------------------------------------------------------------
+		layout: {
+			designWidth: 1280,		// 16:9 - the shape of the student display
+			designHeight: 720,
+
+			areaTop: 48,			// waveform area, below the title bar
+			areaHeight: 552,		// total space shared by the enabled channels
+			gap: 8,					// vertical gap between strips
+			minStripHeight: 60,
+
+			stripLeft: 0,			// traces
+			stripWidth: 900,
+
+			readoutLeft: 912,		// per-channel labels and numbers
+			readoutWidth: 360,		// wide enough for two sub-columns (ETCO2 + awRR)
+
+			bottomGap: 30,			// spacing between blocks in the numbers row
+
+			bottomTop: 604,			// Temp / SpO2 / NIBP row
+			bottomHeight: 112,
+
+			scale: 1				// current fitted scale, set by fitToFrame()
+		},
+
+		// Scale the monitor to the space available and give every canvas a
+		// device-resolution backing store. Called at init and on resize.
+		fitToFrame: function() {
+			var L = chart.layout;
+			var vsm = document.getElementById('vsm');
+			var frame = document.getElementById('vsm-frame');
+			if( ! vsm || ! frame ) {
+				return L.scale;
+			}
+
+			var s;
+			if( frame.getAttribute('data-fit') == 'viewport' ) {
+				// Student monitor: fit the window, letterboxed on black when it is
+				// not 16:9. Works windowed as well as full screen - the scale is
+				// simply whatever the current viewport allows.
+				//
+				// documentElement.clientWidth/Height is used in preference to
+				// window.innerWidth/Height because it excludes any scrollbar and,
+				// more importantly, is 0 rather than misleading when the page is
+				// measured before it has been given a size.
+				var vw = document.documentElement.clientWidth || window.innerWidth || 0;
+				var vh = document.documentElement.clientHeight || window.innerHeight || 0;
+				if( vw < 1 || vh < 1 ) {
+					// The viewport has no size yet - happens when the page is laid
+					// out before its container's bounds are applied. Keep the last
+					// good scale and try again once the layout settles; scaling to a
+					// degenerate value here would make the monitor vanish.
+					chart.scheduleRefit();
+					return L.scale;
+				}
+				s = Math.min( vw / L.designWidth, vh / L.designHeight );
+			} else {
+				// instructor interface: the slot sets the width, height follows
+				s = frame.clientWidth / L.designWidth;
+				if( ! ( s > 0 ) ) {
+					chart.scheduleRefit();
+					return L.scale;
+				}
+			}
+			if( ! isFinite(s) || s <= 0 ) {
+				s = 1;
+			}
+			L.scale = s;
+
+			vsm.style.width = L.designWidth + 'px';
+			vsm.style.height = L.designHeight + 'px';
+			vsm.style.transformOrigin = 'top left';
+			vsm.style.transform = 'scale(' + s + ')';
+
+			// the frame holds the scaled footprint in normal flow
+			var fw = Math.round( L.designWidth * s );
+			var fh = Math.round( L.designHeight * s );
+			frame.style.width = fw + 'px';
+			frame.style.height = fh + 'px';
+
+			// Centre the letterbox vertically. Done here rather than with flex so
+			// that an oversized frame is clipped at the bottom, where it is
+			// obvious, instead of being centred half off the top of the screen.
+			if( frame.getAttribute('data-fit') == 'viewport' ) {
+				var vh2 = document.documentElement.clientHeight || window.innerHeight || 0;
+				var pad = Math.max( 0, Math.floor( ( vh2 - fh ) / 2 ) );
+				frame.style.marginTop = pad + 'px';
+			}
+
+			return s;
+		},
+
+		// Ask for another fit shortly, for the case where the viewport could not be
+		// measured yet. Coalesced so a burst of failed measurements costs one retry.
+		scheduleRefit: function() {
+			if( chart.refitPending ) {
+				return;
+			}
+			chart.refitPending = true;
+			setTimeout( function() {
+				chart.refitPending = false;
+				chart.handleResize();
+			}, 120 );
+		},
+
+		// Backing-store multiplier: design pixels -> device pixels.
+		renderScale: function() {
+			var dpr = window.devicePixelRatio || 1;
+			return chart.layout.scale * dpr;
+		},
+
+		// A channel's `visible` predicate is the same gate its trace colour uses:
+		// always on for the instructor, sensor-dependent on the student monitor.
+		channels: [
+			{
+				key: 'ekg', id: 'vs-trace-1', readout: 'vs-readout-ekg', enabled: true,
+				visible: function() {
+					return ( profile.isVitalsMonitor == false ) || ( controls.ekg.leadsConnected == true );
+				},
+				blank: function() { controls.heartRate.blankHR(); }
+				// no reference scale on the ECG strip
+			},
+			{
+				key: 'resp', id: 'vs-trace-2', readout: 'vs-readout-resp', enabled: true,
+				visible: function() {
+					return ( profile.isVitalsMonitor == false ) || ( controls.CO2.leadsConnected == true );
+				},
+				blank: function() { controls.etCO2.blankValue(); controls.awRR.blankValue(); },
+				scale: {
+					enabled: true,
+					// px at full scale, at the reference height - kept in one place
+					get fullScaleAmplitude() { return chart.ETCO2_FULL_SCALE_PX; },
+					maxValue: function() { return chart.resp.etco2Scale; },
+					// gridlines every 25 mmHg up to whichever full scale is showing
+					lines: function() {
+						var out = [];
+						for( var v = 0; v <= chart.resp.etco2Scale; v += 25 ) {
+							out.push( { value: v, label: true } );
+						}
+						return out;
+					}
+				}
+			},
+			{
+				key: 'pleth', id: 'vs-trace-4', readout: 'vs-readout-pleth', enabled: true,
+				visible: function() {
+					return ( profile.isVitalsMonitor == false ) || ( controls.SpO2.leadsConnected == true );
+				},
+				blank: function() { controls.SpO2.blankValue(); }
+				// no reference scale: the plethysmograph is unitless
+			},
+			{
+				// Like the PA catheter, the arterial strip exists only while a line is
+				// in: with no line there is nothing to transduce, and ECG, ETCO2 and
+				// SpO2 are better off with the space. This applies to the instructor
+				// display as well as the student monitor.
+				// controls.abp.setLineConnected() calls chart.setChannelEnabled('abp', ...).
+				key: 'abp', id: 'vs-trace-3', readout: 'vs-readout-abp', enabled: false,
+				visible: function() {
+					return ( controls.abp.lineConnected == true );
+				},
+				blank: function() { controls.abp.blankValue(); },
+				scale: {
+					enabled: true,
+					fullScaleAmplitude: 100,	// px of deflection at maxValue, at reference height
+					maxValue: function() { return controls.abp.scaleMax; },
+					lines: [
+						{ value: 0,   label: true },
+						{ value: 50,  label: true },
+						{ value: 100, label: true },
+						{ value: 150, label: true }
+					]
+				}
+			},
+			{
+				// The PA catheter strip is switched on and off at runtime rather than
+				// hidden: a catheter that is not in the patient has no trace to show,
+				// and the four remaining channels are better off with the space.
+				// controls.pac.setPlaced() calls chart.setChannelEnabled('pac', ...).
+				key: 'pac', id: 'vs-trace-5', readout: 'vs-readout-pac', enabled: false,
+				visible: function() {
+					return ( controls.pac.placed == true );
+				},
+				blank: function() { controls.pac.blankValue(); },
+				scale: {
+					enabled: true,
+					fullScaleAmplitude: 100,	// px of deflection at maxValue, at reference height
+					maxValue: function() { return chart.pacScaleMax(); },
+					// The scale auto-ranges with the pressures, so the gridlines have
+					// to be computed rather than listed: quarters of whatever full
+					// scale pacScaleMax() picked.
+					lines: function() {
+						var mx = chart.pacScaleMax();
+						var out = [];
+						for( var i = 0; i <= 4; i++ ) {
+							out.push( { value: Math.round( mx * i / 4 ), label: true } );
+						}
+						return out;
+					}
+				}
+			}
+		],
+
+		// Look up a channel entry by strip key.
+		channelFor: function(key) {
+			for( var i = 0; i < chart.channels.length; i++ ) {
+				if( chart.channels[i].key == key ) {
+					return chart.channels[i];
+				}
+			}
+			return null;
+		},
+
+		// Channels that are switched on AND actually present in this page's markup.
+		// vitals.php and ii.php can therefore carry different sets of canvases.
+		enabledChannels: function() {
+			var out = [];
+			for( var i = 0; i < chart.channels.length; i++ ) {
+				var c = chart.channels[i];
+				if( c.enabled && chart[c.key] && document.getElementById(c.id) ) {
+					out.push(c);
+				}
+			}
+			return out;
+		},
+
+		// Size and position every enabled strip and its paired readout block, in
+		// design coordinates, and give each canvas a device-resolution backing
+		// store. Must run before initStrip(), which derives yOffset from height.
+		applyLayout: function() {
+			var chans = chart.enabledChannels();
+			if( chans.length == 0 ) {
+				return;
+			}
+			var L = chart.layout;
+			chart.fitToFrame();
+			var render = chart.renderScale();
+
+			// Hide anything belonging to a channel that is currently switched off,
+			// so a disabled strip does not linger where it was last drawn. A
+			// channel can be toggled at runtime - the PA catheter strip only
+			// exists while a catheter is in - and the remaining channels then
+			// re-divide the waveform area between them.
+			for( var d = 0; d < chart.channels.length; d++ ) {
+				var dc = chart.channels[d];
+				var on = false;
+				for( var k = 0; k < chans.length; k++ ) {
+					if( chans[k].key == dc.key ) { on = true; break; }
+				}
+				var dEl = document.getElementById(dc.id);
+				var dRo = document.getElementById(dc.readout);
+				if( dEl ) { dEl.style.display = on ? '' : 'none'; }
+				if( dRo ) { dRo.style.display = on ? '' : 'none'; }
+			}
+
+			var h = Math.floor( ( L.areaHeight - ( L.gap * ( chans.length - 1 ) ) ) / chans.length );
+			if( h < L.minStripHeight ) {
+				h = L.minStripHeight;
+			}
+			var top = L.areaTop;
+
+			for( var i = 0; i < chans.length; i++ ) {
+				var strip = chart[chans[i].key];
+				var el = document.getElementById(chans[i].id);
+
+				strip.height = h;
+				strip.ampScale = h / chart.REFERENCE_STRIP_HEIGHT;
+
+				// Layout size in design pixels ...
+				el.style.position = 'absolute';
+				el.style.left = L.stripLeft + 'px';
+				el.style.top = top + 'px';
+				el.style.width = L.stripWidth + 'px';
+				el.style.height = h + 'px';
+
+				// ... backing store in device pixels, with a matching context
+				// transform so every draw call still works in design pixels.
+				// Setting width/height resets the context, so the transform has
+				// to be re-applied here rather than once at init.
+				el.width = Math.max( 1, Math.round( L.stripWidth * render ) );
+				el.height = Math.max( 1, Math.round( h * render ) );
+				if( strip.ctx ) {
+					strip.ctx.setTransform( render, 0, 0, render, 0, 0 );
+				}
+
+				var ro = document.getElementById(chans[i].readout);
+				if( ro ) {
+					ro.style.position = 'absolute';
+					ro.style.left = '0px';
+					ro.style.top = top + 'px';
+					ro.style.width = L.readoutWidth + 'px';
+					ro.style.height = h + 'px';
+					// The readout type is expressed in the stylesheet as
+					// calc(<size> * var(--vs-scale)), so the labels and values shrink
+					// with the strip. At five channels this is about 0.8 and the whole
+					// block still fits beside its own trace.
+					ro.style.setProperty('--vs-scale', String( Math.round( strip.ampScale * 1000 ) / 1000 ));
+				}
+
+				top += h + L.gap;
+			}
+
+			var leftCol = document.getElementById('vs-left-col');
+			if( leftCol ) {
+				leftCol.style.position = 'absolute';
+				leftCol.style.left = '0px';
+				leftCol.style.top = '0px';
+				leftCol.style.width = L.stripWidth + 'px';
+				leftCol.style.height = ( L.areaTop + L.areaHeight ) + 'px';
+			}
+			// Only as wide as the readouts. It used to span the whole design canvas,
+			// which put a transparent block on top of every trace and swallowed the
+			// canvas clicks that open the waveform dialogs.
+			var rightCol = document.getElementById('vs-right-col');
+			if( rightCol ) {
+				rightCol.style.position = 'absolute';
+				rightCol.style.left = L.readoutLeft + 'px';
+				rightCol.style.top = '0px';
+				rightCol.style.width = L.readoutWidth + 'px';
+				rightCol.style.height = ( L.areaTop + L.areaHeight ) + 'px';
+			}
+			// The Temp / SpO2 / NIBP row sits at a fixed place on the design
+			// canvas rather than flowing under the strips.
+			var vsm = document.getElementById('vsm');
+			var wide = vsm ? vsm.querySelector('.wide-col') : null;
+			if( wide ) {
+				wide.style.position = 'absolute';
+				wide.style.left = '0px';
+				wide.style.top = L.bottomTop + 'px';
+				wide.style.width = L.designWidth + 'px';
+				wide.style.height = L.bottomHeight + 'px';
+				chart.layoutBottomRow( wide );
+			}
+		},
+
+		// The numbers row along the bottom of the design canvas. The clock is a
+		// full-height block in the left corner and everything else runs to its
+		// right; a page without a clock (the instructor interface has none) simply
+		// starts at the left edge instead.
+		layoutBottomRow: function(wide) {
+			var L = chart.layout;
+			var blocks = [
+				{ el: wide.querySelector('#vs-clock'),              width: 260, full: true },
+				{ el: wide.querySelector('.alt-control.control-Tperi'), width: 260 },
+				{ el: wide.querySelector('#vs-nbp'),                width: 640 }
+			];
+			var x = 0;
+			for( var i = 0; i < blocks.length; i++ ) {
+				var el = blocks[i].el;
+				if( ! el ) {
+					continue;			// channel or clock not present on this page
+				}
+				el.style.position = 'absolute';
+				el.style.left = x + 'px';
+				el.style.top = '0px';
+				el.style.width = blocks[i].width + 'px';
+				el.style.margin = '0';
+				if( blocks[i].full ) {
+					el.style.height = L.bottomHeight + 'px';
+				}
+				x += blocks[i].width + L.bottomGap;
+			}
+		},
+
+		// Wipe every strip and readout at once.
+		//
+		// The individual sensor-indicator handlers each clear their own canvas when
+		// a probe is removed, but a scenario ending is not a probe change: without
+		// this the traces merely stop being redrawn and then erode a pixel at a
+		// time as the sweep passes over them, which reads as the monitor slowly
+		// dissolving rather than switching off. A new channel is covered by adding
+		// its `blank` hook to the registry above.
+		blankMonitor: function() {
+			var chans = chart.enabledChannels();
+			for( var i = 0; i < chans.length; i++ ) {
+				var strip = chart[chans[i].key];
+				if( strip && strip.ctx ) {
+					// full width including the scale label gutter
+					strip.ctx.clearRect( 0, 0, chart.layout.stripWidth, strip.height );
+					strip.xPos = strip.xOffsetLeft;
+					strip.lastDisplayedY = strip.yOffset + strip.yDisplayOffset;
+					strip.lastY = strip.yOffset;
+					strip.scaleWasVisible = false;
+				}
+				if( chans[i].blank ) {
+					try {
+						chans[i].blank();
+					} catch(e) {
+						// a control that isn't on this page must not stop the rest
+					}
+				}
+			}
+		},
+
+		// Wipe a strip the moment its sensor is removed on the student monitor, and
+		// restart its sweep from the left when the sensor comes back. The ECG and
+		// capnograph have always done this (simmgr.js, the ecg_indicator and
+		// etco2_indicator blocks). Without it a strip only stops drawing, and the old
+		// trace lingers until the cursor has erased it a column at a time - a whole
+		// sweep, about 13 seconds.
+		clearStrip: function(key) {
+			var strip = chart[key];
+			if( ! strip || ! strip.ctx || ! document.getElementById(strip.id) ) {
+				return;
+			}
+			chart.initStrip(key);
+			// full width, including the scale label gutter
+			strip.ctx.clearRect( 0, 0, chart.layout.stripWidth + 2, strip.height + 2 );
+			var ch = chart.channelFor(key);
+			strip.lastDisplayedY = ( ch && ch.scale ) ? chart.stripScaleY(key, 0)
+			                                          : strip.yOffset + strip.yDisplayOffset;
+			strip.lastY = strip.yOffset;
+			// Make the draw loop see a visibility change, so a reference scale (the
+			// arterial pressure gridlines) is repainted in full on reconnect rather
+			// than creeping back in a band at a time.
+			strip.scaleWasVisible = false;
+		},
+
+		// Switch a channel on or off and re-divide the waveform area. Used for the
+		// arterial and PA catheter strips, which appear only while their line or
+		// catheter is in.
+		setChannelEnabled: function(key, on) {
+			var ch = chart.channelFor(key);
+			if( ! ch || ch.enabled == on ) {
+				return;
+			}
+			ch.enabled = on;
+			chart.handleResize();
+		},
+
+		// Re-fit after the window changes size or the display enters full screen.
+		// Resizing a canvas clears it and resets its context, so the scales are
+		// repainted; in-flight traces are lost and redraw as the sweep continues.
+		handleResize: function() {
+			if( ! document.getElementById('vsm-frame') ) {
+				return;
+			}
+			chart.applyLayout();
+			var chans = chart.enabledChannels();
+			for( var i = 0; i < chans.length; i++ ) {
+				var key = chans[i].key;
+				var strip = chart[key];
+				if( strip.ctx ) {
+					// Every strip derives its baseline (yOffset) from its height. A
+					// window resize leaves the design-pixel heights alone, but adding
+					// or removing a channel - placing the PA catheter - changes them,
+					// and a baseline left over from the old height draws the trace too
+					// low in the new, shorter strip. initStrip re-derives it, along
+					// with the start position, width and context transform.
+					chart.initStrip( key );
+					strip.lastDisplayedY = strip.yOffset + strip.yDisplayOffset;
+					chart.redrawStripScale( key );
+				} else {
+					strip.xPos = strip.xOffsetLeft;
+					strip.width = chart.layout.stripWidth - strip.xOffsetLeft - strip.xOffsetRight;
+				}
+			}
+		},
 
 		// assume document is rendered before calling init.
 		init: function() {
+			// size and position the strips before anything derives geometry from them
+			chart.applyLayout();
+
 			/************************** EKG **********************************/
 			// set initial pattern
 			chart.ekg.rhythmIndex = 'asystole';	// Flatline
@@ -223,7 +875,9 @@ See gpl.html
 			
 			// init cpr waveform, assume rate will be 120 bpm and waveform is simple 1/2 sinusoidal
 			//var cprXIncr = (120 * chart.ekg.drawInterval * Math.PI) / 60000;
-			var cprAmplitude = chart.ekg.height / 2;
+			// authored against the reference height; chart.ekg.ampScale does the
+			// scaling at draw time, so this must NOT use the live strip height
+			var cprAmplitude = chart.REFERENCE_STRIP_HEIGHT / 2;
 			//var cprIndex = 0;
 			//for(var x = 0; x <= Math.PI; x += cprXIncr) {
 			//	chart.ekg.rhythm.cpr[cprIndex] = (Math.sin(x) * -cprAmplitude);
@@ -840,8 +1494,8 @@ See gpl.html
 
 			// paint the ETCO2 reference scale across the whole strip so it is there
 			// before the first sweep; after this it is maintained by drawRespPixel
-			chart.redrawRespScale();
-			chart.resp.scaleWasVisible = chart.respScaleVisible();
+			chart.redrawStripScale('resp');
+			chart.resp.scaleWasVisible = chart.stripVisible('resp');
 
 			// beep indicator
 			if(chart.ekg.beepFlag == true){
@@ -862,6 +1516,67 @@ See gpl.html
 			// init respiration
 			chart.updateRespRate();
 			controls.awRR.setSynch();
+
+			// Re-fit when the window changes size or the student display goes
+			// full screen. Debounced: a drag generates a resize per frame and
+			// each one reallocates every canvas backing store.
+			if( document.getElementById('vsm-frame') ) {
+				var refit = function() {
+					clearTimeout( chart.resizeTimer );
+					chart.resizeTimer = setTimeout( chart.handleResize, 150 );
+				};
+				window.addEventListener('resize', refit);
+				// A window resize event is not the only way the drawing area
+				// changes size: the page may simply be laid out after this ran, or
+				// sit in a host view whose bounds are applied later. Watching the
+				// document element catches those without any resize event.
+				if( typeof ResizeObserver !== 'undefined' ) {
+					try {
+						new ResizeObserver(refit).observe(document.documentElement);
+					} catch(e) {
+						// not fatal - the resize listener and the retries still apply
+					}
+				}
+				// belt and braces for a viewport that settles after load
+				setTimeout( chart.handleResize, 250 );
+				setTimeout( chart.handleResize, 1000 );
+			}
+
+			/************************** Plethysmograph ***********************/
+			if( document.getElementById(chart.pleth.id) ) {
+				chart.initStrip('pleth');
+				chart.initPlethWaveforms();
+				chart.pleth.lastDisplayedY = chart.pleth.yOffset + chart.pleth.yDisplayOffset;
+				chart.pleth.scaleWasVisible = chart.stripVisible('pleth');
+				chart.pleth.interval = setInterval(chart.drawPlethPixel, chart.pleth.drawInterval);
+			}
+
+			/************************** Arterial pressure ********************/
+			// only when this page carries the strip - vitals.php and ii.php may
+			// legitimately show different channel sets
+			if( document.getElementById(chart.abp.id) ) {
+				chart.initStrip('abp');
+				chart.initAbpWaveforms();
+				chart.abp.lastDisplayedY = chart.stripScaleY('abp', 0);
+				chart.redrawStripScale('abp');
+				chart.abp.scaleWasVisible = chart.stripVisible('abp');
+				chart.abp.interval = setInterval(chart.drawAbpPixel, chart.abp.drawInterval);
+			}
+
+			/************************** PA catheter **************************/
+			// The channel starts disabled and is switched on by controls.pac when a
+			// catheter is placed, so the strip is initialised here but claims no
+			// layout space until then.
+			if( document.getElementById(chart.pac.id) ) {
+				chart.initStrip('pac');
+				chart.initPacWaveforms();
+				chart.pac.lastDisplayedY = chart.stripScaleY('pac', 0);
+				chart.pac.scaleWasVisible = false;
+				chart.pac.interval = setInterval(chart.drawPacPixel, chart.pac.drawInterval);
+				if( typeof controls !== 'undefined' && controls.pac && controls.pac.placed ) {
+					chart.setChannelEnabled('pac', true);
+				}
+			}
 		},
 		
 		// Passed the cardiac data from simmgr status
@@ -940,10 +1655,31 @@ See gpl.html
 			chart[stripType].canvas = document.getElementById(chart[stripType].id);
 			chart[stripType].ctx = chart[stripType].canvas.getContext("2d");
 			chart[stripType].xPos = chart[stripType].xOffsetLeft;
-			chart[stripType].yOffset = chart[stripType].lastY = Math.floor(chart[stripType].height / 2);
-			
-			// set width of strip dynamically
-			chart[stripType].width = $('#' + chart[stripType].id).width() - chart[stripType].xOffsetLeft - chart[stripType].xOffsetRight;
+			// Where the strip's zero/baseline sits, as a fraction of its height.
+			// The ECG and capnograph centre it (deflections either side); the
+			// arterial trace puts it near the floor so the whole strip carries
+			// pressure. Defaults to 0.5, which is what the first two have always
+			// used, so this changes nothing for them.
+			var baselineFraction = ( typeof chart[stripType].baselineFraction === 'number' )
+									? chart[stripType].baselineFraction : 0.5;
+			chart[stripType].yOffset = chart[stripType].lastY = Math.floor(chart[stripType].height * baselineFraction);
+
+			// fallback for a strip the layout manager didn't size (no channel entry)
+			if( ! chart[stripType].ampScale ) {
+				chart[stripType].ampScale = chart[stripType].height / chart.REFERENCE_STRIP_HEIGHT;
+			}
+
+			// The backing store is in device pixels; this makes every draw call
+			// below work in design pixels instead. applyLayout() sets the same
+			// transform, but it runs before the context exists on first init.
+			chart[stripType].ctx.setTransform( chart.renderScale(), 0, 0, chart.renderScale(), 0, 0 );
+
+			// width of the drawable strip, in design pixels
+			var designWidth = chart.layout.stripWidth;
+			if( ! designWidth ) {
+				designWidth = $('#' + chart[stripType].id).width();
+			}
+			chart[stripType].width = designWidth - chart[stripType].xOffsetLeft - chart[stripType].xOffsetRight;
 			return;
 		},
 		
@@ -953,8 +1689,9 @@ See gpl.html
 			chart.ekg.rhythm.vtach3[0] = new Array;
 			xIncr = (controls.heartRate.value * chart.ekg.drawInterval * Math.PI) / 60000;
 //			var amplitude = chart.ekg.height / 2;
-			var amplitude = chart.ekg.height / 2.5;
-			var offset = chart.ekg.height / 2;
+			// reference-height amplitudes - scaled by ampScale in drawEkgPixel
+			var amplitude = chart.REFERENCE_STRIP_HEIGHT / 2.5;
+			var offset = chart.REFERENCE_STRIP_HEIGHT / 2;
 			var index = 0;
 			for(var x = 0; x <= Math.PI; x += xIncr) {
 //				chart.ekg.rhythm.vtach3[0][index] = (Math.sin(x) * -amplitude) + 10;
@@ -1037,10 +1774,19 @@ See gpl.html
 		},
 		
 		drawEkgPixel: function() {
+			// Only a PAUSED scenario freezes the student display.
+			//
+			// Deliberately not STOPPED: scenarioState.STOPPED is 0 and that is the
+			// state the monitor sits in whenever no scenario is running, which is
+			// most of the time - the simulator runs perfectly well without one.
+			// Halting here would blank the monitor for good after a terminate and
+			// stop a newly connected sensor from ever drawing. Terminating wipes
+			// the screen once, via chart.blankMonitor(); it does not switch the
+			// simulator off.
 			if(scenario.currentScenarioState == scenario.scenarioState.PAUSED && profile.isVitalsMonitor) {
 				return;
 			}
-			
+
 			var y;
 
 			// Create the 'cursor' by clearing out a 10px wide section in front of the pixel
@@ -1220,8 +1966,11 @@ See gpl.html
 				y = 0;
 			}
 			
+			// scale the reference-height waveform to this strip's actual height
+			y = y * chart.ekg.ampScale;
+
 			y += chart.ekg.yOffset + chart.ekg.yDisplayOffset;
-			
+
 			// create stroke
 			chart.ekg.ctx.lineWidth = 2;
 			if ( ( profile.isVitalsMonitor == false ) || ( controls.ekg.leadsConnected == true ) )
@@ -1257,65 +2006,101 @@ See gpl.html
 			chart[stripType].ctx.clearRect(chart[stripType].xPos, 0, chart.cursorWidth, chart[stripType].height );
 		},
 
-		// True when the capnograph is 'on' and the ETCO2 scale should be shown.
-		// Same gate the trace colour uses: always on the instructor interface,
-		// only with the CO2 leads connected on the student vitals monitor.
-		respScaleVisible: function() {
-			if( ! chart.respScale.enabled ) {
+		// True when a channel's trace (and therefore its scale) should be drawn.
+		// Always on for the instructor; sensor-dependent on the student monitor.
+		stripVisible: function(key) {
+			var ch = chart.channelFor(key);
+			if( ! ch || ! ch.enabled ) {
 				return false;
 			}
-			if( typeof profile === 'undefined' ) {
-				return true;			// called before the profile is loaded (init)
+			if( typeof profile === 'undefined' || typeof controls === 'undefined' ) {
+				return true;			// called before the page state exists (init)
 			}
-			if( profile.isVitalsMonitor == false ) {
+			if( ! ch.visible ) {
 				return true;
 			}
-			return ( typeof controls !== 'undefined' && controls.CO2 && controls.CO2.leadsConnected == true );
+			try {
+				return ch.visible() ? true : false;
+			} catch(e) {
+				return true;			// a control not built yet must not blank the strip
+			}
 		},
 
-		// y (canvas pixels) of an ETCO2 value in mmHg on the respiration strip.
-		respScaleY: function(value) {
-			var maxValue = ( typeof controls !== 'undefined' && controls.etCO2 && controls.etCO2.maxValue ) ? controls.etCO2.maxValue : 100;
-			var zeroY = chart.resp.yOffset + chart.resp.yDisplayOffset;
-			return Math.round( zeroY - ( value * chart.respScale.fullScaleAmplitude / maxValue ) );
+		// True when the strip has a reference scale and it should be painted.
+		stripScaleVisible: function(key) {
+			var ch = chart.channelFor(key);
+			if( ! ch || ! ch.scale || ! ch.scale.enabled ) {
+				return false;
+			}
+			return chart.stripVisible(key);
+		},
+
+		// A channel's gridlines may be a fixed array or a function, so a scale that
+		// ranges with its data (the PA catheter's does) can move its lines with it.
+		scaleLines: function(cfg) {
+			if( ! cfg || ! cfg.lines ) {
+				return [];
+			}
+			return ( typeof cfg.lines === 'function' ) ? cfg.lines() : cfg.lines;
+		},
+
+		// y (canvas pixels) of a value on a strip's reference scale.
+		stripScaleY: function(key, value) {
+			var ch = chart.channelFor(key);
+			var strip = chart[key];
+			if( ! ch || ! ch.scale || ! strip ) {
+				return 0;
+			}
+			var maxValue = ch.scale.maxValue();
+			if( ! maxValue ) {
+				maxValue = 100;
+			}
+			var zeroY = strip.yOffset + strip.yDisplayOffset;
+			// fullScaleAmplitude is a reference-height figure, so it takes the same
+			// ampScale the waveform does - the scale tracks the trace at any size
+			var fullScale = ch.scale.fullScaleAmplitude * strip.ampScale;
+			return Math.round( zeroY - ( value * fullScale / maxValue ) );
 		},
 
 		// Repaint the reference lines across [xStart, xStart + width). Called with
 		// the cursor band each tick, so the lines survive the sweep that clears it.
-		drawRespScale: function(xStart, width) {
-			if( ! chart.respScaleVisible() ) {
+		drawStripScale: function(key, xStart, width) {
+			if( ! chart.stripScaleVisible(key) ) {
 				return;
 			}
-			var ctx = chart.resp.ctx;
+			var strip = chart[key];
+			var ctx = strip.ctx;
 			if( ! ctx ) {
 				return;
 			}
-			var cfg = chart.respScale;
-			var x0 = Math.max( chart.resp.xOffsetLeft, Math.floor( xStart ) );
-			var x1 = Math.min( chart.resp.width + 2, Math.ceil( xStart + width ) );
+			var cfg = chart.channelFor(key).scale;
+			var st = chart.scaleStyle;
+			var lines = chart.scaleLines(cfg);
+			var x0 = Math.max( strip.xOffsetLeft, Math.floor( xStart ) );
+			var x1 = Math.min( strip.width + 2, Math.ceil( xStart + width ) );
 			if( x1 <= x0 ) {
 				return;
 			}
 
 			var savedFill = ctx.fillStyle;
 
-			for( var i = 0; i < cfg.lines.length; i++ ) {
-				var y = chart.respScaleY( cfg.lines[i].value );
-				if( y < 0 || y >= chart.resp.height ) {
+			for( var i = 0; i < lines.length; i++ ) {
+				var y = chart.stripScaleY( key, lines[i].value );
+				if( y < 0 || y >= strip.height ) {
 					continue;			// off the strip at this scaling
 				}
-				if( cfg.lines[i].value == 0 ) {
+				if( lines[i].value == 0 ) {
 					// zero line: solid, 1px (the waveform itself is drawn 2px)
-					ctx.fillStyle = cfg.zeroColor;
+					ctx.fillStyle = st.zeroColor;
 					ctx.fillRect( x0, y, x1 - x0, 1 );
 				} else {
 					// gridline: 1px dots on an absolute x grid so the dash phase
 					// stays continuous from one repainted band to the next
-					ctx.fillStyle = cfg.lineColor;
-					var dashStart = Math.floor( x0 / cfg.dashPeriod ) * cfg.dashPeriod;
-					for( var dx = dashStart; dx < x1; dx += cfg.dashPeriod ) {
+					ctx.fillStyle = st.lineColor;
+					var dashStart = Math.floor( x0 / st.dashPeriod ) * st.dashPeriod;
+					for( var dx = dashStart; dx < x1; dx += st.dashPeriod ) {
 						var a = Math.max( dx, x0 );
-						var b = Math.min( dx + cfg.dashLength, x1 );
+						var b = Math.min( dx + st.dashLength, x1 );
 						if( b > a ) {
 							ctx.fillRect( a, y, b - a, 1 );
 						}
@@ -1329,36 +2114,39 @@ See gpl.html
 		// Paint the numeric labels in the left gutter. The gutter sits to the left of
 		// xOffsetLeft, which the sweep never clears, so the labels stay put and only
 		// need repainting when the strip wraps (the wrap blacks the gutter out).
-		drawRespScaleLabels: function() {
-			if( ! chart.respScaleVisible() ) {
+		drawStripScaleLabels: function(key) {
+			if( ! chart.stripScaleVisible(key) ) {
 				return;
 			}
-			var ctx = chart.resp.ctx;
+			var strip = chart[key];
+			var ctx = strip.ctx;
 			if( ! ctx ) {
 				return;
 			}
-			var cfg = chart.respScale;
+			var cfg = chart.channelFor(key).scale;
+			var st = chart.scaleStyle;
+			var lines = chart.scaleLines(cfg);
 			var savedFill = ctx.fillStyle;
 			var savedFont = ctx.font;
 			var savedBaseline = ctx.textBaseline;
 			var savedAlign = ctx.textAlign;
 
-			ctx.font = cfg.labelFont;
+			ctx.font = st.labelFont;
 			ctx.textBaseline = 'middle';
 			ctx.textAlign = 'right';
-			ctx.fillStyle = cfg.labelColor;
+			ctx.fillStyle = st.labelColor;
 
-			for( var i = 0; i < cfg.lines.length; i++ ) {
-				if( ! cfg.lines[i].label ) {
+			for( var i = 0; i < lines.length; i++ ) {
+				if( ! lines[i].label ) {
 					continue;
 				}
-				var y = chart.respScaleY( cfg.lines[i].value );
-				if( y < 0 || y >= chart.resp.height ) {
+				var y = chart.stripScaleY( key, lines[i].value );
+				if( y < 0 || y >= strip.height ) {
 					continue;			// off the strip at this scaling
 				}
 				// keep the glyphs on the canvas when a line is near an edge
-				var textY = Math.min( Math.max( y, 6 ), chart.resp.height - 6 );
-				ctx.fillText( String( cfg.lines[i].value ), chart.resp.xOffsetLeft - cfg.labelPad, textY );
+				var textY = Math.min( Math.max( y, 6 ), strip.height - 6 );
+				ctx.fillText( String( lines[i].value ), strip.xOffsetLeft - st.labelPad, textY );
 			}
 
 			ctx.fillStyle = savedFill;
@@ -1367,21 +2155,859 @@ See gpl.html
 			ctx.textAlign = savedAlign;
 		},
 
-		// Blank the label gutter (capnograph switched off on the vitals monitor).
-		clearRespScaleLabels: function() {
-			if( chart.resp.ctx ) {
-				chart.resp.ctx.clearRect( 0, 0, chart.resp.xOffsetLeft, chart.resp.height );
+		// Blank the label gutter (channel switched off on the vitals monitor).
+		clearStripScaleLabels: function(key) {
+			var strip = chart[key];
+			if( strip && strip.ctx ) {
+				strip.ctx.clearRect( 0, 0, strip.xOffsetLeft, strip.height );
 			}
 		},
 
-		// Paint the whole scale at once — at init, and whenever the capnograph is
+		// Paint the whole scale at once - at init, and whenever a channel is
 		// switched back on, so the scale doesn't creep in a band at a time.
-		redrawRespScale: function() {
-			chart.drawRespScale( chart.resp.xOffsetLeft, chart.resp.width - chart.resp.xOffsetLeft + 1 );
-			chart.drawRespScaleLabels();
+		redrawStripScale: function(key) {
+			var strip = chart[key];
+			chart.drawStripScale( key, strip.xOffsetLeft, strip.width - strip.xOffsetLeft + 1 );
+			chart.drawStripScaleLabels( key );
+		},
+
+		// ---------------------------------------------------------------------
+		// Arterial blood pressure
+		//
+		// Each morphology is generated as an array of normalised samples spanning
+		// one cardiac cycle, where 0 is the diastolic pressure and 1 the systolic.
+		// Drawing maps that to mmHg and then through stripScaleY(), so the trace
+		// and the pressure gridlines are guaranteed to agree at any strip height.
+		//
+		// The artifact morphologies deliberately do NOT span the full 0..1 range:
+		// an overdamped trace reads falsely low in systole and falsely high in
+		// diastole (narrowed pulse pressure), an underdamped one overshoots past
+		// systole and undershoots diastole.
+		//
+		// The displayed numbers are derived from the min/max of the very array that
+		// is drawn (see waveformRange below and controls.abp.displayedSystolic), so
+		// the readout can never disagree with the trace - a monitor shows what its
+		// transducer reports, artifact included.
+		// ---------------------------------------------------------------------
+		initAbpWaveforms: function() {
+			var n = chart.abp.sampleCount;
+			var types = ['normal', 'overdamped', 'underdamped', 'poor', 'cpr'];
+
+			// Which morphologies are MEASUREMENT artifacts rather than physiological
+			// states. The distinction matters for what the monitor displays:
+			//
+			//   overdamped / underdamped - the tubing and transducer distort what is
+			//       reported, so the displayed numbers deviate from the set pressure.
+			//       That deviation IS the artifact and is the teaching point.
+			//
+			//   normal / poor perfusion / CPR - the pressure is genuinely what it is.
+			//       A poorly perfused patient set to 70/40 really is 70/40 and the
+			//       monitor reads it correctly; only the shape of the pulse changes.
+			//       These waveforms are normalised below so the trough lands exactly
+			//       on diastolic and the peak exactly on systolic, whatever shape
+			//       they are given - the reading cannot drift from the set pressure.
+			var artifacts = { overdamped: true, underdamped: true };
+
+			// smooth 0..1 ease used for the limb transitions
+			var ease = function(t) { return 0.5 * ( 1 - Math.cos( Math.PI * Math.min( Math.max(t, 0), 1 ) ) ); };
+			var seg  = function(t, a, b) { return a + ( b - a ) * ease(t); };
+
+			for( var ti = 0; ti < types.length; ti++ ) {
+				var type = types[ti];
+				var arr = new Array(n);
+
+				for( var i = 0; i < n; i++ ) {
+					var p = i / n;			// phase through the cardiac cycle
+					var v;
+
+					switch( type ) {
+						case 'overdamped':
+							// slurred upstroke, rounded peak, no dicrotic notch, and
+							// a floor well above true diastole: the classic narrowed
+							// pulse pressure that reads falsely low AND falsely high
+							if( p < 0.20 )      { v = seg( p / 0.20, 0.14, 0.76 ); }
+							else if( p < 0.48 ) { v = seg( ( p - 0.20 ) / 0.28, 0.76, 0.52 ); }
+							else                { v = 0.38 * Math.exp( -1.5 * ( p - 0.48 ) / 0.52 ) + 0.14; }
+							break;
+
+						case 'underdamped':
+							// systolic overshoot followed by visible ringing, settling
+							// below true diastole. The ring period is kept long enough
+							// (about seven cycles per beat) to survive being sampled
+							// at one pixel per draw tick - a faster ring aliases into
+							// an invisible smear at normal heart rates.
+							if( p < 0.07 )      { v = seg( p / 0.07, -0.06, 1.20 ); }
+							else if( p < 0.32 ) { v = seg( ( p - 0.07 ) / 0.25, 1.20, 0.58 ); }
+							else                { v = 0.64 * Math.exp( -2.6 * ( p - 0.32 ) / 0.68 ) - 0.06; }
+							if( p >= 0.07 ) {
+								v += 0.26 * Math.exp( -5.5 * ( p - 0.07 ) )
+								   * Math.sin( 2 * Math.PI * ( p - 0.07 ) / 0.11 );
+							}
+							break;
+
+						case 'poor':
+							// slow upstroke, absent dicrotic notch, low amplitude and
+							// a narrow pulse pressure - the low-output trace
+							if( p < 0.26 )      { v = seg( p / 0.26, 0.08, 0.55 ); }
+							else if( p < 0.54 ) { v = seg( ( p - 0.26 ) / 0.28, 0.55, 0.34 ); }
+							else                { v = 0.26 * Math.exp( -2.0 * ( p - 0.54 ) / 0.46 ) + 0.08; }
+							break;
+
+						case 'cpr':
+							// compression-generated pressure wave: rounded, no
+							// dicrotic notch, near-zero between compressions
+							if( p < 0.45 ) { v = Math.pow( Math.sin( Math.PI * p / 0.45 ), 0.9 ); }
+							else           { v = 0.14 * Math.exp( -6.0 * ( p - 0.45 ) ); }
+							break;
+
+						default:	// 'normal'
+							// rapid upstroke, systolic decline, dicrotic notch and
+							// wave, then exponential diastolic runoff
+							if( p < 0.09 )      { v = seg( p / 0.09, 0.0, 1.0 ); }
+							else if( p < 0.30 ) { v = seg( ( p - 0.09 ) / 0.21, 1.0, 0.62 ); }
+							else if( p < 0.35 ) { v = seg( ( p - 0.30 ) / 0.05, 0.62, 0.50 ); }
+							else if( p < 0.42 ) { v = seg( ( p - 0.35 ) / 0.07, 0.50, 0.64 ); }
+							else                { v = 0.64 * Math.exp( -3.2 * ( p - 0.42 ) / 0.58 ); }
+							break;
+					}
+					arr[i] = v;
+				}
+
+				var mn = arr[0], mx = arr[0], k;
+				for( k = 0; k < arr.length; k++ ) {
+					if( arr[k] < mn ) { mn = arr[k]; }
+					if( arr[k] > mx ) { mx = arr[k]; }
+				}
+
+				// A physiological shape must report the true pressure, so rescale it
+				// to span exactly 0..1: trough on diastolic, peak on systolic. Only
+				// the measurement artifacts keep their off-range excursions.
+				if( ! artifacts[type] && mx > mn ) {
+					for( k = 0; k < arr.length; k++ ) {
+						arr[k] = ( arr[k] - mn ) / ( mx - mn );
+					}
+					mn = 0;
+					mx = 1;
+				}
+
+				chart.abp.waveform[type] = arr;
+				chart.abp.waveformDistorts[type] = ( artifacts[type] === true );
+
+				// Record what this morphology spans. The displayed systolic and
+				// diastolic of an artifact come straight from these, so retuning a
+				// waveform above moves its numbers with it - they cannot drift apart.
+				var sum = 0;
+				for( k = 0; k < arr.length; k++ ) {
+					sum += arr[k];
+				}
+				chart.abp.waveformRange[type] = { min: mn, max: mx, mean: sum / arr.length };
+			}
+		},
+
+		// True when the morphology is a measurement artifact, and the numbers the
+		// monitor displays therefore deviate from the pressure that was set.
+		abpWaveformDistorts: function(type) {
+			return chart.abp.waveformDistorts[type] === true;
+		},
+
+		// Fraction of the true pulse pressure that a morphology reaches at its peak
+		// and trough. Used by controls.abp to derive the displayed pressures.
+		abpWaveformRange: function(type) {
+			var r = chart.abp.waveformRange[type];
+			return r ? r : { min: 0, max: 1, mean: 1 / 3 };
+		},
+
+		// Which morphology to draw. Instructor-selected only.
+		//
+		// This deliberately does NOT auto-engage the CPR morphology from
+		// controls.cpr.inProgress. That flag comes from cpr.compression, which the
+		// controller raises on any large X/Y accelerometer excursion - including
+		// simply moving the manikin (sim-ctl-master/cpr/cprScan.cpp). Driving the
+		// arterial waveform from it would make the trace jump to a compression
+		// pattern when someone repositions the patient.
+		//
+		// Selecting 'cpr' free-runs at ABP_CPR_RATE rather than following the ECG,
+		// because compressions are not synchronised to the underlying rhythm. Real
+		// per-compression synchronisation needs a debounced compression event from
+		// the controller in the 40 ms quick status - see the changes document.
+		abpWaveformType: function() {
+			var t = ( typeof controls !== 'undefined' && controls.abp ) ? controls.abp.waveformType : 'normal';
+			return chart.abp.waveform[t] ? t : 'normal';
+		},
+
+		// Queue the pressure pulse for a beat. Called from controls.heartRate.setSynch,
+		// which is the beat event itself, so the ECG remains the single source of
+		// beat timing and the pressure wave simply follows it.
+		//
+		// Deliberately NOT driven from chart.status.cardiac.synch: drawEkgPixel only
+		// clears that flag inside its "leads connected or instructor interface"
+		// branch, so on a student monitor with the ECG switched off the flag latches
+		// true and any edge detector on it fires exactly once. An arterial line does
+		// not stop working because the ECG electrodes came off.
+		abpBeat: function() {
+			if( ! chart.abp.ctx ) {
+				return;
+			}
+			chart.abp.pendingDelay = Math.max( 1, Math.round( chart.ABP_TRANSIT_MSEC / chart.abp.drawInterval ) );
+		},
+
+		// Ticks in one cardiac cycle at the current rate, used as the pulse length
+		// so the waveform always fills the interval between beats.
+		abpCycleTicks: function() {
+			var rate;
+			if( chart.abpWaveformType() == 'cpr' ) {
+				rate = chart.ABP_CPR_RATE;
+			} else {
+				rate = ( typeof controls !== 'undefined' && controls.heartRate ) ? controls.heartRate.value : 0;
+			}
+			if( ! rate || rate <= 0 ) {
+				return 0;
+			}
+			return Math.max( 4, Math.round( 60000 / rate / chart.abp.drawInterval ) );
+		},
+
+		// True when the arterial line should show a pulsatile trace at all: a
+		// pulseless rhythm still has electrical activity but produces no pressure.
+		abpHasOutput: function() {
+			if( typeof controls === 'undefined' ) {
+				return false;
+			}
+			if( controls.cpr && controls.cpr.inProgress == true ) {
+				return true;			// compressions generate pressure
+			}
+			if( controls.heartRhythm && ( controls.heartRhythm.pea == true || controls.heartRhythm.arrest == true ) ) {
+				return false;			// PEA / arrest: complexes but no output
+			}
+			return ( controls.heartRate && controls.heartRate.value > 0 );
+		},
+
+		// ---------------------------------------------------------------------
+		// Plethysmograph
+		//
+		// Same generation approach as the arterial morphologies: normalised samples
+		// spanning one cardiac cycle, 0 at the trough and 1 at the peak. Unlike the
+		// pressure trace there is no scale to agree with, so amplitude is purely a
+		// gain choice (see PLETH_AMPLITUDE).
+		// ---------------------------------------------------------------------
+		initPlethWaveforms: function() {
+			var n = chart.pleth.sampleCount;
+			var ease = function(t) { return 0.5 * ( 1 - Math.cos( Math.PI * Math.min( Math.max(t, 0), 1 ) ) ); };
+			var seg  = function(t, a, b) { return a + ( b - a ) * ease(t); };
+			var types = ['normal', 'poor', 'artifact'];
+
+			for( var ti = 0; ti < types.length; ti++ ) {
+				var type = types[ti];
+				var arr = new Array(n);
+				for( var i = 0; i < n; i++ ) {
+					var p = i / n;
+					var v;
+					switch( type ) {
+						case 'poor':
+							// Blunt and slow: a shallow upstroke, no discernible
+							// dicrotic notch, and a lazy return to baseline. Drawn at
+							// reduced gain as well, so it reads as a weak signal.
+							if( p < 0.30 )      { v = seg( p / 0.30, 0.0, 1.0 ); }
+							else if( p < 0.62 ) { v = seg( ( p - 0.30 ) / 0.32, 1.0, 0.42 ); }
+							else                { v = 0.42 * Math.exp( -1.6 * ( p - 0.62 ) / 0.38 ); }
+							break;
+
+						case 'artifact':
+							// No usable signal: probe off, or no detectable pulse.
+							// Deliberately not pulsatile - the shape is filled in by
+							// drawPlethPixel, which wanders the baseline instead of
+							// replaying a cardiac cycle.
+							v = 0;
+							break;
+
+						default:	// 'normal'
+							// Brisk systolic upstroke, rounded peak, dicrotic notch on
+							// the descent, then an exponential diastolic decay. Softer
+							// than the arterial trace: the signal is optical and
+							// mechanically damped by the tissue.
+							if( p < 0.12 )      { v = seg( p / 0.12, 0.0, 1.0 ); }
+							else if( p < 0.34 ) { v = seg( ( p - 0.12 ) / 0.22, 1.0, 0.55 ); }
+							else if( p < 0.40 ) { v = seg( ( p - 0.34 ) / 0.06, 0.55, 0.46 ); }
+							else if( p < 0.47 ) { v = seg( ( p - 0.40 ) / 0.07, 0.46, 0.57 ); }
+							else                { v = 0.57 * Math.exp( -3.0 * ( p - 0.47 ) / 0.53 ); }
+							break;
+					}
+					arr[i] = v;
+				}
+				chart.pleth.waveform[type] = arr;
+			}
+		},
+
+		plethWaveformType: function() {
+			var t = ( typeof controls !== 'undefined' && controls.SpO2 ) ? controls.SpO2.waveformType : 'normal';
+			return chart.pleth.waveform[t] ? t : 'normal';
+		},
+
+		// Queue the pleth pulse for a beat. Called from controls.heartRate.setSynch
+		// alongside chart.abpBeat, so both follow the same beat.
+		plethBeat: function() {
+			if( ! chart.pleth.ctx ) {
+				return;
+			}
+			chart.pleth.pendingDelay = Math.max( 1, Math.round( chart.PLETH_TRANSIT_MSEC / chart.pleth.drawInterval ) );
+		},
+
+		// A pulse oximeter shows a pulsatile trace only when there is a pulse to
+		// detect: the same condition the arterial line uses.
+		plethHasOutput: function() {
+			if( chart.plethWaveformType() == 'artifact' ) {
+				return false;
+			}
+			return chart.abpHasOutput();
+		},
+
+		// ---------------------------------------------------------------------
+		// Pulmonary artery catheter
+		//
+		// A Swan-Ganz catheter is floated from a central vein through the right
+		// heart into a pulmonary artery, and the operator knows where the tip is
+		// purely from the shape of the pressure trace. That is what this strip
+		// teaches, so the five positions are generated to make the transitions
+		// unmistakable rather than merely plausible:
+		//
+		//   CVP / RA   low-amplitude venous trace with a, c and v waves and the
+		//              x and y descents between them. CVP is drawn slightly damped
+		//              relative to RA - the tip is still up in the vena cava.
+		//   RV         the tell is DIASTOLE: pressure collapses to essentially zero
+		//              between beats, because a relaxed right ventricle fills at
+		//              almost no pressure. Systole jumps to RV systolic.
+		//   PA         same systolic peak as RV - the pulmonic valve is open at the
+		//              moment of peak ejection - but diastole now STEPS UP and stays
+		//              well above zero, because the closed pulmonic valve holds the
+		//              arterial column back. A dicrotic notch appears at valve
+		//              closure. The diastolic step-up is how you know the valve was
+		//              crossed, and it is why the two are drawn on a shared scale.
+		//   Wedge      the balloon occludes the branch and the pulsatile arterial
+		//              waveform COLLAPSES to a damped left atrial trace: small a and
+		//              v waves, no notch, and a mean below PA diastolic.
+		//
+		// Unlike the arterial morphologies, which are normalised 0..1 and mapped to
+		// pressure at draw time, these are generated directly in mmHg. Their
+		// features are absolute (a 3 mmHg v wave is a 3 mmHg v wave, whatever the
+		// mean) and the RV trace has to reach true zero, which no fixed
+		// normalisation against systolic and diastolic can express. They are
+		// regenerated whenever the instructor changes a pressure - see
+		// pacWaveformKey below - which is cheap: five arrays of 120 samples.
+		// ---------------------------------------------------------------------
+
+		// Signature of the pressures the generated arrays currently reflect.
+		pacWaveformKey: function() {
+			if( typeof controls === 'undefined' || ! controls.pac ) {
+				return '';
+			}
+			var c = controls.pac;
+			return [ c.raMean, c.rvSys, c.rvDia, c.paSys, c.paDia, c.wedgeMean ].join(':');
+		},
+
+		initPacWaveforms: function() {
+			var n = chart.pac.sampleCount;
+			var c = ( typeof controls !== 'undefined' && controls.pac ) ? controls.pac : null;
+
+			var raM   = c ? c.raMean    : 5;
+			var rvS   = c ? c.rvSys     : 25;
+			var rvD   = c ? c.rvDia     : 5;
+			var paS   = c ? c.paSys     : 25;
+			var paD   = c ? c.paDia     : 12;
+			var pcwM  = c ? c.wedgeMean : 9;
+
+			// smooth 0..1 ease, as used by the arterial morphologies
+			var ease = function(t) { return 0.5 * ( 1 - Math.cos( Math.PI * Math.min( Math.max(t, 0), 1 ) ) ); };
+			var seg  = function(t, a, b) { return a + ( b - a ) * ease(t); };
+			// exponential runoff that is exactly 1 at t=0 and exactly 0 at t=1, so a
+			// diastolic decay lands precisely on the diastolic pressure instead of
+			// leaving a step at the cycle wrap
+			var decay = function(t, k) {
+				t = Math.min( Math.max(t, 0), 1 );
+				var e = Math.exp( -k );
+				return ( Math.exp( -k * t ) - e ) / ( 1 - e );
+			};
+
+			// Venous deviation from the mean, in mmHg, for one cardiac cycle measured
+			// from the R wave. The a wave follows atrial contraction, which precedes
+			// the QRS, so it sits at the END of the cycle - just before the next R.
+			var venous = function(p) {
+				if( p < 0.04 )      { return 1.0; }							// post-a plateau
+				if( p < 0.12 )      { return seg( ( p - 0.04 ) / 0.08,  1.0,  2.0 ); }	// c wave
+				if( p < 0.28 )      { return seg( ( p - 0.12 ) / 0.16,  2.0, -2.5 ); }	// x descent
+				if( p < 0.45 )      { return seg( ( p - 0.28 ) / 0.17, -2.5,  3.0 ); }	// v wave
+				if( p < 0.60 )      { return seg( ( p - 0.45 ) / 0.15,  3.0, -3.0 ); }	// y descent
+				if( p < 0.80 )      { return seg( ( p - 0.60 ) / 0.20, -3.0, -0.5 ); }	// filling
+				if( p < 0.88 )      { return seg( ( p - 0.80 ) / 0.08, -0.5,  4.0 ); }	// a wave
+				return seg( ( p - 0.88 ) / 0.12, 4.0, 1.0 );							// x descent
+			};
+
+			// Left atrial pressure seen through the pulmonary capillary bed: damped,
+			// delayed, and with no c wave to speak of. The collapse in amplitude is
+			// the wedge tell as much as the drop in mean is.
+			var wedge = function(p) {
+				if( p < 0.10 )      { return seg(   p          / 0.10,  0.6,  0.0 ); }
+				if( p < 0.26 )      { return seg( ( p - 0.10 ) / 0.16,  0.0,  2.5 ); }	// a wave (delayed)
+				if( p < 0.42 )      { return seg( ( p - 0.26 ) / 0.16,  2.5, -1.5 ); }	// x descent
+				if( p < 0.62 )      { return seg( ( p - 0.42 ) / 0.20, -1.5,  2.0 ); }	// v wave
+				if( p < 0.78 )      { return seg( ( p - 0.62 ) / 0.16,  2.0, -1.8 ); }	// y descent
+				return seg( ( p - 0.78 ) / 0.22, -1.8, 0.6 );
+			};
+
+			// A venous trace has to report the mean the instructor set, so the shape
+			// is centred on its own mean before the configured mean is added. Retuning
+			// a wave above therefore cannot drag the reading off the set pressure.
+			var centred = function(fn, mean, damping) {
+				var raw = new Array(n), sum = 0, i;
+				for( i = 0; i < n; i++ ) {
+					raw[i] = fn( i / n );
+					sum += raw[i];
+				}
+				var avg = sum / n;
+				for( i = 0; i < n; i++ ) {
+					raw[i] = mean + ( ( raw[i] - avg ) * damping );
+				}
+				return raw;
+			};
+
+			var out = {};
+
+			// CVP: the same venous waveform, damped by the length of catheter still
+			// sitting in the vena cava. Same mean - it is the same venous pressure.
+			out.cvp = centred( venous, raM, 0.70 );
+			out.ra  = centred( venous, raM, 1.00 );
+			out.wedge = centred( wedge, pcwM, 1.00 );
+
+			// Right ventricle. Peak lands exactly on RV systolic and the END-diastolic
+			// value exactly on RV diastolic, which is how a ventricular pressure is
+			// reported; the early-diastolic dip to zero is the whole point of the trace
+			// and is deliberately below the reported diastolic.
+			var rv = new Array(n);
+			var pa = new Array(n);
+			for( var i = 0; i < n; i++ ) {
+				var p = i / n;
+				var v;
+
+				if( p < 0.02 )      { v = rvD; }
+				else if( p < 0.14 ) { v = seg( ( p - 0.02 ) / 0.12, rvD, rvS ); }			// upstroke
+				else if( p < 0.30 ) { v = seg( ( p - 0.14 ) / 0.16, rvS, rvS * 0.92 ); }		// ejection
+				else if( p < 0.42 ) { v = seg( ( p - 0.30 ) / 0.12, rvS * 0.92, 0.4 ); }		// isovolumic fall
+				else if( p < 0.50 ) { v = seg( ( p - 0.42 ) / 0.08, 0.4, 0.0 ); }			// early diastolic dip
+				else if( p < 0.86 ) { v = seg( ( p - 0.50 ) / 0.36, 0.0, rvD - 0.8 ); }		// slow filling
+				else if( p < 0.93 ) { v = seg( ( p - 0.86 ) / 0.07, rvD - 0.8, rvD + 0.8 ); }// atrial kick
+				else                { v = seg( ( p - 0.93 ) / 0.07, rvD + 0.8, rvD ); }
+				rv[i] = v;
+
+				// Pulmonary artery. Same peak as the ventricle, but diastole never
+				// returns to baseline - the runoff decays onto PA diastolic and stops
+				// there - and a dicrotic notch marks pulmonic valve closure.
+				var pp = paS - paD;
+				if( p < 0.04 )      { v = paD; }
+				else if( p < 0.16 ) { v = seg( ( p - 0.04 ) / 0.12, paD, paS ); }					// upstroke
+				else if( p < 0.34 ) { v = seg( ( p - 0.16 ) / 0.18, paS, paD + 0.45 * pp ); }		// decline
+				else if( p < 0.40 ) { v = seg( ( p - 0.34 ) / 0.06, paD + 0.45 * pp, paD + 0.32 * pp ); }	// notch
+				else if( p < 0.46 ) { v = seg( ( p - 0.40 ) / 0.06, paD + 0.32 * pp, paD + 0.42 * pp ); }	// dicrotic wave
+				else                { v = paD + ( 0.42 * pp * decay( ( p - 0.46 ) / 0.54, 2.6 ) ); }	// runoff
+				pa[i] = v;
+			}
+			out.rv = rv;
+			out.pa = pa;
+
+			chart.pac.waveform = out;
+			chart.pac.waveformKey = chart.pacWaveformKey();
+		},
+
+		// Which catheter position to draw, regenerating the arrays first if the
+		// instructor has changed a pressure since they were built.
+		pacWaveformType: function() {
+			if( chart.pac.waveformKey !== chart.pacWaveformKey() ) {
+				chart.initPacWaveforms();
+			}
+			var t = ( typeof controls !== 'undefined' && controls.pac ) ? controls.pac.position : 'cvp';
+			return chart.pac.waveform[t] ? t : 'cvp';
+		},
+
+		// Full scale for the pressure axis, auto-ranged so a right heart is not
+		// squashed into the bottom of the strip. Stepped rather than continuous, so
+		// the gridlines stay on round numbers and the scale does not creep about
+		// every time a pressure is nudged.
+		pacScaleMax: function() {
+			var peak = 0;
+			if( typeof controls !== 'undefined' && controls.pac ) {
+				peak = Math.max( controls.pac.paSys, controls.pac.rvSys );
+			}
+			var want = peak * 1.15;
+			for( var i = 0; i < chart.PAC_SCALE_STEPS.length; i++ ) {
+				if( chart.PAC_SCALE_STEPS[i] >= want ) {
+					return chart.PAC_SCALE_STEPS[i];
+				}
+			}
+			return chart.PAC_SCALE_STEPS[ chart.PAC_SCALE_STEPS.length - 1 ];
+		},
+
+		// Queue the pressure wave for a beat. Called from controls.heartRate.setSynch
+		// alongside chart.abpBeat, for the same reasons - see chart.abpBeat.
+		pacBeat: function() {
+			if( ! chart.pac.ctx ) {
+				return;
+			}
+			chart.pac.pendingDelay = Math.max( 1, Math.round( chart.PAC_TRANSIT_MSEC / chart.pac.drawInterval ) );
+		},
+
+		// A catheter in a chamber with no mechanical activity still reads a pressure -
+		// it just stops pulsating. Arrest flattens the trace onto the mean rather
+		// than blanking it, which is what the transducer would actually show.
+		pacHasOutput: function() {
+			return chart.abpHasOutput();
+		},
+
+		// Resting pressure between beats: the last sample of the cycle, which is end
+		// diastole for the ventricular and arterial traces and the mean for the
+		// venous ones. Holding this keeps the trace continuous at low heart rates.
+		pacRestingValue: function() {
+			var wave = chart.pac.waveform[ chart.pacWaveformType() ];
+			if( ! wave || ! wave.length ) {
+				return 0;
+			}
+			return wave[ wave.length - 1 ];
+		},
+
+		drawPacPixel: function() {
+			// Only a PAUSED scenario freezes the student display - see drawAbpPixel
+			// for why STOPPED deliberately does not.
+			if(scenario.currentScenarioState == scenario.scenarioState.PAUSED && profile.isVitalsMonitor) {
+				return;
+			}
+			if( ! chart.pac.ctx ) {
+				return;
+			}
+
+			var y;
+
+			// catheter placed or withdrawn
+			var visible = chart.stripVisible('pac');
+			if( visible != chart.pac.scaleWasVisible ) {
+				if( visible == true ) {
+					chart.redrawStripScale('pac');
+				} else {
+					chart.clearStripScaleLabels('pac');
+				}
+				chart.pac.scaleWasVisible = visible;
+			}
+
+			chart.drawCursor('pac');
+			chart.drawStripScale('pac', chart.pac.xPos, chart.cursorWidth);
+
+			if( visible == false ) {
+				chart.pac.xPos++;
+				if((chart.pac.xPos + chart.pac.xOffsetRight) > chart.pac.width) {
+					chart.pac.xPos = chart.pac.xOffsetLeft;
+				}
+				return;					// blank strip, nothing drawn
+			}
+
+			// count down the transit delay, then start the cycle
+			if( chart.pac.pendingDelay >= 0 ) {
+				if( chart.pac.pendingDelay == 0 ) {
+					chart.pac.pendingDelay = -1;
+					chart.pac.pulseLength = chart.abpCycleTicks();
+					if( chart.pac.pulseLength > 0 && chart.pacHasOutput() ) {
+						chart.pac.pulseActive = true;
+						chart.pac.pulseIndex = 0;
+						// capture the array for this beat so a pressure change part
+						// way through does not distort the waveform in flight
+						chart.pac.currentWave = chart.pac.waveform[ chart.pacWaveformType() ];
+						// refresh the numerics once per beat, as a monitor does
+						controls.pac.displayValue();
+					}
+				} else {
+					chart.pac.pendingDelay--;
+				}
+			}
+
+			var mmHg;
+			if( chart.pac.pulseActive == true && chart.pac.currentWave ) {
+				var wave = chart.pac.currentWave;
+				var idx = Math.floor( ( chart.pac.pulseIndex / chart.pac.pulseLength ) * wave.length );
+				if( idx >= wave.length ) {
+					idx = wave.length - 1;
+				}
+				mmHg = wave[idx];
+				chart.pac.pulseIndex++;
+				if( chart.pac.pulseIndex >= chart.pac.pulseLength ) {
+					chart.pac.pulseActive = false;
+				}
+			} else {
+				// Between beats, and during arrest, sit at the resting pressure. The
+				// catheter is still in a fluid column: it reads a pressure whether or
+				// not the heart is ejecting.
+				mmHg = chart.pacRestingValue();
+			}
+			chart.pac.lastMmHg = mmHg;
+
+			y = chart.stripScaleY( 'pac', mmHg );
+
+			// clamp into the strip so a big pressure cannot draw outside it
+			if( y < 1 ) { y = 1; }
+			if( y > chart.pac.height - 1 ) { y = chart.pac.height - 1; }
+
+			chart.pac.ctx.lineWidth = 2;
+			chart.pac.ctx.strokeStyle = chart.pac.color;
+			chart.pac.ctx.beginPath();
+			chart.pac.ctx.moveTo(chart.pac.xPos, chart.pac.lastDisplayedY);
+
+			chart.pac.xPos++;
+
+			chart.pac.ctx.lineTo(chart.pac.xPos, y);
+			chart.pac.ctx.stroke();
+
+			chart.pac.lastDisplayedY = y;
+
+			if((chart.pac.xPos + chart.pac.xOffsetRight) > chart.pac.width) {
+				chart.pac.xPos = chart.pac.xOffsetLeft;
+				chart.pac.ctx.fillStyle = "black";
+				chart.pac.ctx.fillRect(0, 0, chart.pac.xOffsetLeft, chart.pac.height);
+				chart.drawStripScaleLabels('pac');
+			}
+		},
+
+		drawPlethPixel: function() {
+			if(scenario.currentScenarioState == scenario.scenarioState.PAUSED && profile.isVitalsMonitor) {
+				return;
+			}
+			if( ! chart.pleth.ctx ) {
+				return;
+			}
+
+			var visible = chart.stripVisible('pleth');
+			if( visible != chart.pleth.scaleWasVisible ) {
+				chart.pleth.scaleWasVisible = visible;
+			}
+
+			chart.drawCursor('pleth');
+
+			if( visible == false ) {
+				chart.pleth.xPos++;
+				if((chart.pleth.xPos + chart.pleth.xOffsetRight) > chart.pleth.width) {
+					chart.pleth.xPos = chart.pleth.xOffsetLeft;
+				}
+				return;
+			}
+
+			var type = chart.plethWaveformType();
+			var norm;
+
+			if( type == 'artifact' || chart.plethHasOutput() == false ) {
+				// Wandering, non-pulsatile baseline. Two incommensurate sinusoids
+				// plus a little noise, so it never settles into a rhythm a student
+				// could mistake for a pulse.
+				chart.pleth.noisePhase += 1;
+				var ph = chart.pleth.noisePhase;
+				norm = 0.5
+					 + 0.30 * Math.sin( ph / 17.0 )
+					 + 0.18 * Math.sin( ph / 6.3 )
+					 + 0.10 * ( Math.random() - 0.5 );
+				if( norm < 0 ) { norm = 0; }
+				if( norm > 1 ) { norm = 1; }
+				chart.pleth.pulseActive = false;
+			} else {
+				// count down the transit delay, then start the cycle
+				if( chart.pleth.pendingDelay >= 0 ) {
+					if( chart.pleth.pendingDelay == 0 ) {
+						chart.pleth.pendingDelay = -1;
+						chart.pleth.pulseLength = chart.abpCycleTicks();
+						if( chart.pleth.pulseLength > 0 ) {
+							chart.pleth.pulseActive = true;
+							chart.pleth.pulseIndex = 0;
+						}
+					} else {
+						chart.pleth.pendingDelay--;
+					}
+				}
+
+				if( chart.pleth.pulseActive == true ) {
+					var wave = chart.pleth.waveform[type];
+					var idx = Math.floor( ( chart.pleth.pulseIndex / chart.pleth.pulseLength ) * wave.length );
+					if( idx >= wave.length ) {
+						idx = wave.length - 1;
+					}
+					norm = wave[idx];
+					chart.pleth.pulseIndex++;
+					if( chart.pleth.pulseIndex >= chart.pleth.pulseLength ) {
+						chart.pleth.pulseActive = false;
+					}
+				} else {
+					norm = 0;
+				}
+			}
+			chart.pleth.lastNorm = norm;
+
+			var gain = chart.PLETH_AMPLITUDE[type];
+			if( ! gain ) {
+				gain = 1.0;
+			}
+			// full-scale deflection is the strip height (see PLETH_AMPLITUDE)
+			var zeroY = chart.pleth.yOffset + chart.pleth.yDisplayOffset;
+			var full = chart.pleth.height;
+			var y = Math.round( zeroY - ( norm * gain * full ) );
+
+			if( y < 1 ) { y = 1; }
+			if( y > chart.pleth.height - 1 ) { y = chart.pleth.height - 1; }
+
+			chart.pleth.ctx.lineWidth = 2;
+			chart.pleth.ctx.strokeStyle = chart.pleth.color;
+			chart.pleth.ctx.beginPath();
+			chart.pleth.ctx.moveTo(chart.pleth.xPos, chart.pleth.lastDisplayedY);
+
+			chart.pleth.xPos++;
+
+			chart.pleth.ctx.lineTo(chart.pleth.xPos, y);
+			chart.pleth.ctx.stroke();
+
+			chart.pleth.lastDisplayedY = y;
+
+			if((chart.pleth.xPos + chart.pleth.xOffsetRight) > chart.pleth.width) {
+				chart.pleth.xPos = chart.pleth.xOffsetLeft;
+				chart.pleth.ctx.fillStyle = "black";
+				chart.pleth.ctx.fillRect(0, 0, chart.pleth.xOffsetLeft, chart.pleth.height);
+			}
+		},
+
+		drawAbpPixel: function() {
+			// Only a PAUSED scenario freezes the student display.
+			//
+			// Deliberately not STOPPED: scenarioState.STOPPED is 0 and that is the
+			// state the monitor sits in whenever no scenario is running, which is
+			// most of the time - the simulator runs perfectly well without one.
+			// Halting here would blank the monitor for good after a terminate and
+			// stop a newly connected sensor from ever drawing. Terminating wipes
+			// the screen once, via chart.blankMonitor(); it does not switch the
+			// simulator off.
+			if(scenario.currentScenarioState == scenario.scenarioState.PAUSED && profile.isVitalsMonitor) {
+				return;
+			}
+			if( ! chart.abp.ctx ) {
+				return;
+			}
+
+			var y;
+
+			// arterial line switched on or off (see the equivalent in drawRespPixel)
+			var visible = chart.stripVisible('abp');
+			if( visible != chart.abp.scaleWasVisible ) {
+				if( visible == true ) {
+					chart.redrawStripScale('abp');
+				} else {
+					chart.clearStripScaleLabels('abp');
+				}
+				chart.abp.scaleWasVisible = visible;
+			}
+
+			chart.drawCursor('abp');
+			chart.drawStripScale('abp', chart.abp.xPos, chart.cursorWidth);
+
+			if( visible == false ) {
+				chart.abp.xPos++;
+				if((chart.abp.xPos + chart.abp.xOffsetRight) > chart.abp.width) {
+					chart.abp.xPos = chart.abp.xOffsetLeft;
+				}
+				return;					// blank strip, nothing drawn
+			}
+
+			// CPR runs free of the ECG, so it self-triggers rather than waiting for
+			// a beat that compressions do not produce
+			if( chart.abpWaveformType() == 'cpr' && chart.abp.pulseActive == false && chart.abp.pendingDelay < 0 ) {
+				chart.abp.pendingDelay = 0;
+			}
+
+			// count down the pulse transit delay, then start the cycle
+			if( chart.abp.pendingDelay >= 0 ) {
+				if( chart.abp.pendingDelay == 0 ) {
+					chart.abp.pendingDelay = -1;
+					chart.abp.pulseLength = chart.abpCycleTicks();
+					if( chart.abp.pulseLength > 0 && chart.abpHasOutput() ) {
+						chart.abp.pulseActive = true;
+						chart.abp.pulseIndex = 0;
+						// capture the pressures at the start of the beat so a change
+						// part way through does not distort the waveform in flight
+						// the TRUE pressures define the range the waveform spans;
+						// the artifact is in the morphology, and the displayed
+						// numbers are derived back out of it (controls.abp)
+						chart.abp.currentSys = controls.abp.setSystolic();
+						chart.abp.currentDia = controls.abp.setDiastolic();
+						// refresh the numerics once per beat, as a monitor does
+						controls.abp.displayValue();
+					}
+				} else {
+					chart.abp.pendingDelay--;
+				}
+			}
+
+			var norm;
+			if( chart.abp.pulseActive == true ) {
+				var wave = chart.abp.waveform[ chart.abpWaveformType() ];
+				var idx = Math.floor( ( chart.abp.pulseIndex / chart.abp.pulseLength ) * wave.length );
+				if( idx >= wave.length ) {
+					idx = wave.length - 1;
+				}
+				norm = wave[idx];
+				chart.abp.pulseIndex++;
+				if( chart.abp.pulseIndex >= chart.abp.pulseLength ) {
+					chart.abp.pulseActive = false;
+				}
+			} else if( chart.abpHasOutput() == false ) {
+				// no output: decay towards zero rather than snapping flat
+				norm = chart.abp.lastNorm * 0.94;
+				if( norm < 0.01 ) {
+					norm = 0;
+				}
+				chart.abp.currentSys = controls.abp.setSystolic();
+				chart.abp.currentDia = controls.abp.setDiastolic();
+			} else {
+				norm = 0;				// at diastole, waiting for the next beat
+			}
+			chart.abp.lastNorm = norm;
+
+			var mmHg;
+			if( chart.abpHasOutput() == false ) {
+				mmHg = norm * chart.abp.currentDia;		// decays to 0 mmHg
+			} else {
+				mmHg = chart.abp.currentDia + ( norm * ( chart.abp.currentSys - chart.abp.currentDia ) );
+			}
+			y = chart.stripScaleY( 'abp', mmHg );
+
+			// clamp into the strip so a big overshoot cannot draw outside it
+			if( y < 1 ) { y = 1; }
+			if( y > chart.abp.height - 1 ) { y = chart.abp.height - 1; }
+
+			chart.abp.ctx.lineWidth = 2;
+			chart.abp.ctx.strokeStyle = chart.abp.color;
+			chart.abp.ctx.beginPath();
+			chart.abp.ctx.moveTo(chart.abp.xPos, chart.abp.lastDisplayedY);
+
+			chart.abp.xPos++;
+
+			chart.abp.ctx.lineTo(chart.abp.xPos, y);
+			chart.abp.ctx.stroke();
+
+			chart.abp.lastDisplayedY = y;
+
+			if((chart.abp.xPos + chart.abp.xOffsetRight) > chart.abp.width) {
+				chart.abp.xPos = chart.abp.xOffsetLeft;
+				chart.abp.ctx.fillStyle = "black";
+				chart.abp.ctx.fillRect(0, 0, chart.abp.xOffsetLeft, chart.abp.height);
+				chart.drawStripScaleLabels('abp');
+			}
 		},
 
 		drawRespPixel: function() {
+			// Only a PAUSED scenario freezes the student display.
+			//
+			// Deliberately not STOPPED: scenarioState.STOPPED is 0 and that is the
+			// state the monitor sits in whenever no scenario is running, which is
+			// most of the time - the simulator runs perfectly well without one.
+			// Halting here would blank the monitor for good after a terminate and
+			// stop a newly connected sensor from ever drawing. Terminating wipes
+			// the screen once, via chart.blankMonitor(); it does not switch the
+			// simulator off.
 			if(scenario.currentScenarioState == scenario.scenarioState.PAUSED && profile.isVitalsMonitor) {
 				return;
 			}
@@ -1392,12 +3018,12 @@ See gpl.html
 			// the vitals monitor). On: paint the whole scale now rather than letting
 			// it creep in a band at a time over the sweep. Off: blank the labels,
 			// which live outside the area the sweep clears.
-			var scaleVisible = chart.respScaleVisible();
+			var scaleVisible = chart.stripVisible('resp');
 			if( scaleVisible != chart.resp.scaleWasVisible ) {
 				if( scaleVisible == true ) {
-					chart.redrawRespScale();
+					chart.redrawStripScale('resp');
 				} else {
-					chart.clearRespScaleLabels();
+					chart.clearStripScaleLabels('resp');
 				}
 				chart.resp.scaleWasVisible = scaleVisible;
 			}
@@ -1407,7 +3033,7 @@ See gpl.html
 
 			// repaint the ETCO2 reference scale into the section just cleared, so it
 			// sits behind the trace instead of being wiped out by the sweep
-			chart.drawRespScale(chart.resp.xPos, chart.cursorWidth);
+			chart.drawStripScale('resp', chart.resp.xPos, chart.cursorWidth);
 
 			if(controls.manualRespiration.inProgress == true) {
 				if(controls.manualRespiration.manualBreathIndex >= chart.resp.manualBreathPattern.length) {
@@ -1417,6 +3043,9 @@ See gpl.html
 					//scale the y value to the current ETCO2
 					chart.resp.currentetCO2value = controls.etCO2.value;
 					var _midx = controls.manualRespiration.manualBreathIndex;
+					if( _midx == 0 ) {
+						chart.updateEtco2Scale( chart.resp.currentetCO2value );
+					}
 					var _rawVal = chart.resp.manualBreathPattern[_midx];
 					var _mPeakVal = 61.55049417;		// max of manualBreathPattern (index 50)
 					var _mScaleFactor = chart.resp.currentetCO2value / controls.etCO2.maxValue;
@@ -1483,6 +3112,7 @@ See gpl.html
 					chart.updateRespRate();
 					//store the current etCO2 value for this breath in case it is changed mid-breath
 					chart.resp.currentetCO2value = controls.etCO2.value
+					chart.updateEtco2Scale( chart.resp.currentetCO2value );
 					
 					// clear out synch bit
 					chart.status.resp.synch = false;
@@ -1649,7 +3279,13 @@ See gpl.html
 			
 			// save last y before offsets are added in
 			chart.resp.lastY = y;
-			
+
+			// waveform units -> the display scale (see ETCO2_SCALE_STEPS)
+			y = y * chart.etco2DisplayGain();
+
+			// scale the reference-height waveform to this strip's actual height
+			y = y * chart.resp.ampScale;
+
 			y += chart.resp.yOffset + chart.resp.yDisplayOffset;
 			// create stroke
 			chart.resp.ctx.lineWidth = 2;
@@ -1678,7 +3314,7 @@ See gpl.html
 				chart.resp.xPos = chart.resp.xOffsetLeft;
 				chart.resp.ctx.fillRect(0, 0, chart.resp.xOffsetLeft, chart.resp.height);
 				// the fill above blacks out the gutter the scale labels live in
-				chart.drawRespScaleLabels();
+				chart.drawStripScaleLabels('resp');
 			}
 
 			// are we at the start of a new pattern?
@@ -1691,6 +3327,42 @@ See gpl.html
 			}
 		},
 		
+		// Pick the capnograph's full scale for a value: the smallest step that keeps
+		// the plateau under 90% of the scale. It steps down again only once the value
+		// is well inside the smaller scale, so an ETCO2 trending back and forth
+		// across a boundary does not make the display jump on every breath.
+		etco2ScaleMax: function(value) {
+			var v = parseInt(value, 10) || 0;
+			var steps = chart.ETCO2_SCALE_STEPS;
+			var want = steps[steps.length - 1];
+			for( var i = 0; i < steps.length; i++ ) {
+				if( v <= steps[i] * 0.9 ) { want = steps[i]; break; }
+			}
+			var cur = chart.resp.etco2Scale || steps[0];
+			if( want > cur || ( want < cur && v <= want * 0.8 ) ) {
+				return want;
+			}
+			return cur;
+		},
+
+		// Re-range at the start of a breath, never mid-breath. A change of scale
+		// moves every gridline, so the strip is wiped and the sweep restarts with the
+		// new scale, as a monitor does when it autoscales.
+		updateEtco2Scale: function(value) {
+			var next = chart.etco2ScaleMax(value);
+			if( next != chart.resp.etco2Scale ) {
+				chart.resp.etco2Scale = next;
+				chart.clearStrip('resp');
+			}
+		},
+
+		// Multiplier from the waveform code's own units (resp.max px for
+		// etCO2.maxValue mmHg) to the display scale.
+		etco2DisplayGain: function() {
+			var nativePerMmHg = ( chart.resp.max || 62 ) / ( controls.etCO2.maxValue || 100 );
+			return ( chart.ETCO2_FULL_SCALE_PX / chart.resp.etco2Scale ) / nativePerMmHg;
+		},
+
 		getETC02MaxDisplay: function() {
 			// calculate maximum displayed for ETCO2
 			chart.displayETCO2.max = Math.floor(chart.resp.max * (controls.etCO2.value / controls.etCO2.maxValue));

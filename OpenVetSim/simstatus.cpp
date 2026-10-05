@@ -332,6 +332,16 @@ simstatusMain(void)
 						// Serve static files for the mobile remote UI
 						sendStaticFile(path);
 					}
+					else if (strcmp(path, "sim-ii/js/chart.js") == 0 ||
+					         strcmp(path, "sim-ii/js/controls.js") == 0)
+					{
+						// The defibrillator page (sim-remote/defib.html) draws its
+						// ECG with the same waveform code as the patient monitor, so
+						// it can never show a different rhythm. Exactly these two
+						// files are exposed - the rest of sim-ii stays private to the
+						// PHP server, which only listens on 127.0.0.1.
+						sendStaticFile(path);
+					}
 					else
 					{
 						sendNotFound(path);
@@ -436,8 +446,10 @@ sendNotFound(char *path)
  * sendStaticFile – serve a static file from the HTML root.
  *
  * reqPath is a relative path such as "sim-remote/css/remote.css".
- * Only paths that start with "sim-remote/" are served; anything else
- * returns 404 so that we never accidentally expose other files.
+ * Only paths that start with "sim-remote/", plus the two whitelisted
+ * waveform scripts sim-ii/js/chart.js and sim-ii/js/controls.js, are
+ * routed here; anything else returns 404 so that we never accidentally
+ * expose other files. The whitelist lives in the request router above.
  * Path components containing ".." are rejected outright.
  */
 void
@@ -1458,6 +1470,34 @@ sendStatus(void)
 	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.bp_cuff));
 	makejson("bp_cuff", buffer);
 	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.abp_line));
+	makejson("abp_line", buffer);
+	htmlReply += ",\n";
+	makejson("abp_waveform", simmgr_shm->status.cardiac.abp_waveform);
+	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.pac_placed));
+	makejson("pac_placed", buffer);
+	htmlReply += ",\n";
+	makejson("pac_position", simmgr_shm->status.cardiac.pac_position);
+	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.pac_ra_mean));
+	makejson("pac_ra_mean", buffer);
+	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.pac_rv_sys));
+	makejson("pac_rv_sys", buffer);
+	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.pac_rv_dia));
+	makejson("pac_rv_dia", buffer);
+	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.pac_pa_sys));
+	makejson("pac_pa_sys", buffer);
+	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.pac_pa_dia));
+	makejson("pac_pa_dia", buffer);
+	htmlReply += ",\n";
+	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.pac_wedge_mean));
+	makejson("pac_wedge_mean", buffer);
+	htmlReply += ",\n";
 	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.cardiac.arrest));
 	makejson("arrest", buffer);
 	htmlReply += "\n},\n";
@@ -1495,6 +1535,8 @@ sendStatus(void)
 	makejson("etco2", buffer);
 	htmlReply += ",\n";
 	makejson("co2_waveform", simmgr_shm->status.respiration.co2_waveform);
+	htmlReply += ",\n";
+	makejson("spo2_waveform", simmgr_shm->status.respiration.spo2_waveform);
 	htmlReply += ",\n";
 	snprintf(buffer, 256, "%d", (int)(simmgr_shm->status.respiration.rate));
 	makejson("rate", buffer);

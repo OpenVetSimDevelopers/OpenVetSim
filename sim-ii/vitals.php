@@ -115,6 +115,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 				controls.etCO2.init();
 				controls.Tperi.init();
 				controls.nbp.init();
+				controls.pac.init();
 				//buttons.init();
 				//events.init();
 				scenario.init();
@@ -204,43 +205,85 @@ console.log('telesim.imageNext[1]: ' + telesim.imageNext[1]);
 	
 </head>
 
-<body>
+<body class="vs-fullscreen">
+			<div id="vsm-frame" data-fit="viewport">
 			<div id="vsm">
 				<h1><span id="startStopButton">VS</span> Monitor</h1>
 				<div id="vs-left-col">
 					<canvas id="vs-trace-1" class="vs-trace" width="500" height="125" onclick="modal.heartRhythm(); return false;"></canvas>
 					<canvas id="vs-trace-2" class="vs-trace" width="500" height="125" onclick="modal.respRhythm(); return false;"></canvas>
+					<canvas id="vs-trace-3" class="vs-trace" width="500" height="125" onclick="modal.abpWaveform(); return false;"></canvas>
+					<canvas id="vs-trace-4" class="vs-trace" width="500" height="125" onclick="modal.plethWaveform(); return false;"></canvas>
+					<canvas id="vs-trace-5" class="vs-trace" width="500" height="125" onclick="modal.pacCatheter(); return false;"></canvas>
 				</div>
 				<div id="vs-right-col">
-					<div class="vs-controls clearer">
-						<a href="javascript: void(0)" onclick="modal.heartRhythm(); return false;"class="strip-label color-green">HR</a>
+					<div id="vs-readout-ekg" class="vs-readout">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.heartRhythm(); return false;"class="strip-label color-green">HR</a>
+						</div>
+						<div id="vs-heartRhythm" class="vs-controls">
+							<a href="javascript: void(0)" onclick="modal.heartRate(); return false;" class="display-rate color-green">70</a>
+						</div>
 					</div>
-					<div id="vs-heartRhythm" class="vs-controls">
-						<a href="javascript: void(0)" onclick="modal.heartRate(); return false;" class="display-rate color-green">70</a>
+					<div id="vs-readout-resp" class="vs-readout two-col">
+						<div class="vs-readout-col">
+							<div class="vs-controls clearer">
+								<a href="javascript: void(0)" class="strip-label color-white">ETCO<sub>2</sub></a>
+							</div>
+							<div id="vs-etCO2" class="vs-controls">
+								<a href="javascript: void(0)" onclick="modal.etCO2(); return false;" class="display-rate color-white">75</a>
+							</div>
+						</div>
+						<div class="vs-readout-col">
+							<div class="alt-control awRR">
+								<a class="alt-control-title color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">awRR</a>
+								<a class="alt-control-rate color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">123</a>
+							</div>
+						</div>
 					</div>
-					<div class="vs-controls clearer">
-						<a href="javascript: void(0)" class="strip-label color-white">ETCO<sub>2</sub></a>
+					<div id="vs-readout-pleth" class="vs-readout">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.plethWaveform(); return false;" class="strip-label color-yellow">SpO<sub>2</sub></a>
+						</div>
+						<div class="alt-control with-sub SpO2">
+							<a class="alt-control-title color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">SpO<sub>2<sub></a>
+							<a id="display-SpO2" class="alt-control-rate color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">123</a>
+						</div>
 					</div>
-					<div id="vs-etCO2" class="vs-controls">
-						<a href="javascript: void(0)" onclick="modal.etCO2(); return false;" class="display-rate color-white">75</a>
+					<div id="vs-readout-abp" class="vs-readout">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.abpWaveform(); return false;" class="strip-label color-red">ABP</a>
+						</div>
+						<div id="vs-abp" class="vs-controls">
+							<a id="display-abp" href="javascript: void(0)" onclick="modal.nbp(); return false;" class="display-abp color-red">---</a>
+							<a id="display-abp-map" href="javascript: void(0)" onclick="modal.nbp(); return false;" class="display-abp-map color-red"></a>
+						</div>
+					</div>
+					<!-- PA catheter. Hidden until a catheter is placed; chart.applyLayout
+					     shows it and re-divides the waveform area. The label changes with
+					     the tip position - CVP, RA, RV, PA or PAWP - because the number
+					     means something different in each. -->
+					<div id="vs-readout-pac" class="vs-readout" style="display: none;">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.pacCatheter(); return false;" id="display-pac-label" class="strip-label color-cyan">CVP</a>
+						</div>
+						<div id="vs-pac" class="vs-controls">
+							<a id="display-pac" href="javascript: void(0)" onclick="modal.pacCatheter(); return false;" class="display-pac color-cyan">---</a>
+							<a id="display-pac-sub" href="javascript: void(0)" onclick="modal.pacCatheter(); return false;" class="display-pac-sub color-cyan"></a>
+						</div>
 					</div>
 				</div>
 				<div class="wide-col">
+					<div id="vs-clock" class="alt-control">
+						<a class="alt-control-title color-white">Clock</a>
+							<div id="clock">
+								11:22:33
+							</div>
+					</div>
 					<div class="alt-control control-Tperi">
 						<a class="alt-control-title color-blue" href="javascript: void(0)" onclick="modal.Tperi(); return false;">Temp</a>
 						<a class="alt-control-rate color-blue" href="javascript: void(0)" onclick="modal.Tperi(); return false;" id="display-Tperi">123</a>
-						<div id="clock">
-							11:22:33
-						</div>
 						<!-- <div id="test-link" style="clear: both; float: left;"><a href="javascript: void(2);">Test</a></div> -->
-					</div>
-					<div class="alt-control awRR">
-						<a class="alt-control-title color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">awRR</a>
-						<a class="alt-control-rate color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">123</a>
-					</div>
-					<div class="alt-control with-sub SpO2">
-						<a class="alt-control-title color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">SpO<sub>2<sub></a>
-						<a id="display-SpO2" class="alt-control-rate color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">123</a>
 					</div>
 					<div id="vs-nbp" class="alt-control">
 						<a class="alt-control-title color-red" href="javascript: void(0)" onclick="modal.nbp(); return false;">NIBP</a>
@@ -253,5 +296,6 @@ console.log('telesim.imageNext[1]: ' + telesim.imageNext[1]);
 				<div id="telesim-1" class="float-left ii-border telesim-right"></div>
 
 			</div>
+			</div><!-- /vsm-frame -->
 </body>
 </html>

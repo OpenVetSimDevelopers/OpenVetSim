@@ -274,6 +274,7 @@ console.log("Window name: " + window.name);
 				controls.etCO2.init();
 				controls.Tperi.init();
 				controls.nbp.init();
+				controls.pac.init();
 				controls.pulse.init();
 				buttons.init();
 				events.init();
@@ -421,22 +422,18 @@ console.log(controls['awRR'].increment);
 				</div>
 			</div>
 
-			<div id="mannequin" class="clearer float-left ii-border">
+			<!-- Left column: the avatar, the sensor row beneath it, then the scenario
+			     and media controls. Stacked in one column so the scenario controls
+			     sit directly under the sensors rather than below the taller vitals
+			     monitor beside them. -->
+			<div id="ii-left-col">
+			<div id="mannequin-frame" class="clearer float-left ii-border">
+			<div id="mannequin">
 				<h1>Non Vital Controls</h1>
 				<h2 id="button-palpate-title" class="nvs-button"></h2>
 				<img class="nvs-button" id="button-palpate" src="<?= BROWSER_IMAGES; ?>palpate.png" alt="Palpate Icon">
 				<h2 id="button-cpr-title" class="nvs-button"></h2>
 				<img class="nvs-button" id="button-cpr" src="<?= BROWSER_IMAGES; ?>empty.png" alt="CPR Icon">
-				<h2 id="button-SpO2-title" class="nvs-button"></h2>
-				<img class="nvs-button" id="button-SpO2" src="<?= BROWSER_IMAGES; ?>spo2.png" alt="SpO2 Icon">
-				<h2 id="button-ekg-title" class="nvs-button"></h2>
-				<img class="nvs-button" id="button-ekg" src="<?= BROWSER_IMAGES; ?>ekg.png" alt="EKG Icon">
-				<h2 id="button-Tperi-title" class="nvs-button"></h2>
-				<img class="nvs-button" id="button-Tperi" src="<?= BROWSER_IMAGES; ?>Tperi.png" alt="Temperature Icon">
-				<h2 id="button-CO2-title" class="nvs-button"></h2>
-				<img class="nvs-button" id="button-CO2" src="<?= BROWSER_IMAGES; ?>co2.png" alt="CO2 Icon">
-				<h2 id="button-bpcuff-title" class="nvs-button"></h2>
-				<img class="nvs-button" id="button-bpcuff" src="<?= BROWSER_IMAGES; ?>bpcuff.png" alt="bpcuff Icon">
 				
 				<!-- PEA and Cardiac Arrest Indicators -->
 				<h2 id="indicator-pea">PEA</h2>
@@ -481,72 +478,22 @@ console.log(controls['awRR'].increment);
 					<a class="control-tele-sim" id="chest-dog-control-icon" href="javascript: void(2);" onclick="modal.chestRise(); return false;"><img src="" width="" title=""></a>
 				</div>
 			</div>
-			
-			<div id="vsm" class="float-left ii-border">
-				<h1><span id="startStopButton">VS</span> Monitor</h1>
-				<div id="vs-left-col">
-					<canvas id="vs-trace-1" class="vs-trace" width="500" height="125" onclick="modal.heartRhythm(); return false;"></canvas>
-					<canvas id="vs-trace-2" class="vs-trace" width="500" height="125" onclick="modal.respRhythm(); return false;"></canvas>
-				</div>
-				<div id="vs-right-col">
-					<div class="vs-controls clearer">
-						<a href="javascript: void(0)" onclick="modal.heartRhythm(); return false;" class="strip-label color-green">HR</a>
-					</div>
-					<div id="vs-heartRhythm" class="vs-controls">
-						<a href="javascript: void(0)" onclick="modal.heartRate(); return false;" class="display-rate color-green">70</a>
-					</div>
-					<div class="vs-controls clearer">
-						<a href="javascript: void(0)" onclick="modal.respRhythm(); return false;" class="strip-label color-white">ETCO<sub>2</sub></a>
-					</div>
-					<div id="vs-etCO2" class="vs-controls">
-						<a href="javascript: void(0)" onclick="modal.etCO2(); return false;" class="display-rate color-white">75</a>
-					</div>
-				</div>
-				<div class="wide-col">
-					<div class="alt-control control-Tperi">
-						<a class="alt-control-title color-blue" href="javascript: void(0)" onclick="modal.Tperi(); return false;">Temp</a>
-						<a class="alt-control-rate color-blue" href="javascript: void(0)" onclick="modal.Tperi(); return false;" id="display-Tperi">123</a>
-					</div>
-					<div class="alt-control awRR">
-						<a class="alt-control-title color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">awRR</a>
-						<a class="alt-control-rate color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">123</a>
-					</div>
-					<div class="alt-control with-sub SpO2">
-						<a class="alt-control-title color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">SpO<sub>2</sub></a>
-						<a id="display-SpO2" class="alt-control-rate color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">123</a>
-					</div>
-					<div id="vs-nbp" class="alt-control">
-						<a class="alt-control-title color-red" href="javascript: void(0)" onclick="modal.nbp(); return false;">NIBP</a>
-						<a id="display-nbp" class="alt-control-rate nbip color-red" href="javascript: void(0)" onclick="modal.nbp(); return false;"><span id="displayed-systolic">140</span>/<span id="displayed-diastolic">75</span> (<span id="displayed-meanNBP">80</span>) <span class="nbip-label">mmHg</span></a>
-						<a id="display-nbp-hr" class="alt-control-rate color-red" href="javascript: void(0)" onclick="modal.nbp(); return false;"><span style="font-size: 18px;">PR</span> <span id="displayed-reportedHR">75</span></a>
-						<button id="button-nbp" class="scenario-button red-button">Read NIBP</button>
-					</div>
-				</div>
-				<!-- <div class="float-left ii-border button demo-button">
-					<button id="switch-ekg-now">Switch EKG Patterns!</button>
-					<button id="ekg-sound" class="pause">Turn EKG Sound Off!</button>
-					<button id="switch-resp-now">Switch Resp Patterns!</button>
-				</div> -->
+			</div><!-- /mannequin-frame -->
+
+			<!-- Sensor row. Laid out by the stylesheet in a fixed order: a scenario's
+			     <control> entries still set each label, but their left/top positions
+			     no longer apply. The labels here are the defaults for a scenario that
+			     does not list a sensor. -->
+			<div id="sensor-bar" class="ii-border">
+				<div class="sensor"><h2 id="button-ekg-title" class="nvs-button">ECG</h2><img class="nvs-button" id="button-ekg" src="<?= BROWSER_IMAGES; ?>ekg.png" alt="EKG Icon"></div>
+				<div class="sensor"><h2 id="button-SpO2-title" class="nvs-button">SpO<sub>2</sub></h2><img class="nvs-button" id="button-SpO2" src="<?= BROWSER_IMAGES; ?>spo2.png" alt="SpO2 Icon"></div>
+				<div class="sensor"><h2 id="button-Tperi-title" class="nvs-button">Temp</h2><img class="nvs-button" id="button-Tperi" src="<?= BROWSER_IMAGES; ?>Tperi.png" alt="Temperature Icon"></div>
+				<div class="sensor"><h2 id="button-pac-title" class="nvs-button">PA Cath</h2><img class="nvs-button" id="button-pac" src="<?= BROWSER_IMAGES; ?>pac.png" alt="PA Catheter Icon"></div>
+				<div class="sensor"><h2 id="button-abp-title" class="nvs-button">ABP</h2><img class="nvs-button" id="button-abp" src="<?= BROWSER_IMAGES; ?>abp.png" alt="Arterial Line Icon"></div>
+				<div class="sensor"><h2 id="button-CO2-title" class="nvs-button">ETCO<sub>2</sub></h2><img class="nvs-button" id="button-CO2" src="<?= BROWSER_IMAGES; ?>co2.png" alt="CO2 Icon"></div>
+				<div class="sensor"><h2 id="button-bpcuff-title" class="nvs-button">Cuff</h2><img class="nvs-button" id="button-bpcuff" src="<?= BROWSER_IMAGES; ?>bpcuff.png" alt="bpcuff Icon"></div>
 			</div>
-			
-<!--			<div id="telesim-top" class="float-left ii-border telesim-right" style="background-image: url('<?= BROWSER_SCENARIOS; ?>/default/images/top-dog.png')">
-				<div class="ausc-hotspot" data-coord="1-1-1" style="top: 75px; left: 100px;">1</div>
-				<div class="ausc-hotspot" data-coord="1-2-1" style="top: 75px; left: 125px;">2</div>
-				<div class="ausc-hotspot" data-coord="1-3-1" style="top: 100px; left: 100px;">3</div>
-				<div class="ausc-hotspot" data-coord="1-4-1" style="top: 100px; left: 125px;">4</div>
-			</div> -->
-			<div id="telesim-0" class="float-left ii-border telesim-right">
-				<select id="telesim-select-0" class="telesim-select">
-					<option value="">Please select</option>
-				</select>
-			</div>
-			<div id="telesim-1" class="float-left ii-border telesim-right">
-				<select id="telesim-select-1" class="telesim-select">
-					<option value="">Please select</option>
-				</select>
-				<div id="telesim-size" class="expand">+</div>
-			</div>
-			
+
 			<div id="media-col">
 				<div id="scenario-select" class="float-left clearer ii-border">
 					<h2 class="float-left clearer">Scenario Select:</h2>
@@ -570,14 +517,125 @@ console.log(controls['awRR'].increment);
 					<span id="controller-status-dot" class="ctrl-dot ctrl-disconnected"></span><span id="controller-status-text">No controller found</span>
 				</div>
 			</div>
+			</div><!-- /ii-left-col -->
+			
+			<!-- Right column: the monitor with the event log and comment box under it,
+			     all the monitor's width. -->
+			<div id="ii-right-col">
+			<div id="vsm-frame" class="float-left ii-border" data-fit="width">
+			<div id="vsm">
+				<h1><span id="startStopButton">VS</span> Monitor</h1>
+				<div id="vs-left-col">
+					<canvas id="vs-trace-1" class="vs-trace" width="500" height="125" onclick="modal.heartRhythm(); return false;"></canvas>
+					<canvas id="vs-trace-2" class="vs-trace" width="500" height="125" onclick="modal.respRhythm(); return false;"></canvas>
+					<canvas id="vs-trace-3" class="vs-trace" width="500" height="125" onclick="modal.abpWaveform(); return false;"></canvas>
+					<canvas id="vs-trace-4" class="vs-trace" width="500" height="125" onclick="modal.plethWaveform(); return false;"></canvas>
+					<canvas id="vs-trace-5" class="vs-trace" width="500" height="125" onclick="modal.pacCatheter(); return false;"></canvas>
+				</div>
+				<div id="vs-right-col">
+					<div id="vs-readout-ekg" class="vs-readout">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.heartRhythm(); return false;" class="strip-label color-green">HR</a>
+						</div>
+						<div id="vs-heartRhythm" class="vs-controls">
+							<a href="javascript: void(0)" onclick="modal.heartRate(); return false;" class="display-rate color-green">70</a>
+						</div>
+					</div>
+					<div id="vs-readout-resp" class="vs-readout two-col">
+						<div class="vs-readout-col">
+							<div class="vs-controls clearer">
+								<a href="javascript: void(0)" onclick="modal.respRhythm(); return false;" class="strip-label color-white">ETCO<sub>2</sub></a>
+							</div>
+							<div id="vs-etCO2" class="vs-controls">
+								<a href="javascript: void(0)" onclick="modal.etCO2(); return false;" class="display-rate color-white">75</a>
+							</div>
+						</div>
+						<div class="vs-readout-col">
+							<div class="alt-control awRR">
+								<a class="alt-control-title color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">awRR</a>
+								<a class="alt-control-rate color-white" href="javascript: void(0)" onclick="modal.awRR(); return false;">123</a>
+							</div>
+						</div>
+					</div>
+					<div id="vs-readout-pleth" class="vs-readout">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.plethWaveform(); return false;" class="strip-label color-yellow">SpO<sub>2</sub></a>
+						</div>
+						<div class="alt-control with-sub SpO2">
+							<a class="alt-control-title color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">SpO<sub>2</sub></a>
+							<a id="display-SpO2" class="alt-control-rate color-yellow" href="javascript: void(0)" onclick="modal.SpO2(); return false;">123</a>
+						</div>
+					</div>
+					<div id="vs-readout-abp" class="vs-readout">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.abpWaveform(); return false;" class="strip-label color-red">ABP</a>
+						</div>
+						<div id="vs-abp" class="vs-controls">
+							<a id="display-abp" href="javascript: void(0)" onclick="modal.nbp(); return false;" class="display-abp color-red">---</a>
+							<a id="display-abp-map" href="javascript: void(0)" onclick="modal.nbp(); return false;" class="display-abp-map color-red"></a>
+						</div>
+					</div>
+					<!-- PA catheter. Hidden until a catheter is placed; chart.applyLayout
+					     shows it and re-divides the waveform area. The label changes with
+					     the tip position - CVP, RA, RV, PA or PAWP - because the number
+					     means something different in each. -->
+					<div id="vs-readout-pac" class="vs-readout" style="display: none;">
+						<div class="vs-controls clearer">
+							<a href="javascript: void(0)" onclick="modal.pacCatheter(); return false;" id="display-pac-label" class="strip-label color-cyan">CVP</a>
+						</div>
+						<div id="vs-pac" class="vs-controls">
+							<a id="display-pac" href="javascript: void(0)" onclick="modal.pacCatheter(); return false;" class="display-pac color-cyan">---</a>
+							<a id="display-pac-sub" href="javascript: void(0)" onclick="modal.pacCatheter(); return false;" class="display-pac-sub color-cyan"></a>
+						</div>
+					</div>
+				</div>
+				<div class="wide-col">
+					<div class="alt-control control-Tperi">
+						<a class="alt-control-title color-blue" href="javascript: void(0)" onclick="modal.Tperi(); return false;">Temp</a>
+						<a class="alt-control-rate color-blue" href="javascript: void(0)" onclick="modal.Tperi(); return false;" id="display-Tperi">123</a>
+					</div>
+					<div id="vs-nbp" class="alt-control">
+						<a class="alt-control-title color-red" href="javascript: void(0)" onclick="modal.nbp(); return false;">NIBP</a>
+						<a id="display-nbp" class="alt-control-rate nbip color-red" href="javascript: void(0)" onclick="modal.nbp(); return false;"><span id="displayed-systolic">140</span>/<span id="displayed-diastolic">75</span> (<span id="displayed-meanNBP">80</span>) <span class="nbip-label">mmHg</span></a>
+						<a id="display-nbp-hr" class="alt-control-rate color-red" href="javascript: void(0)" onclick="modal.nbp(); return false;"><span style="font-size: 18px;">PR</span> <span id="displayed-reportedHR">75</span></a>
+						<button id="button-nbp" class="scenario-button red-button">Read NIBP</button>
+					</div>
+				</div>
+				<!-- <div class="float-left ii-border button demo-button">
+					<button id="switch-ekg-now">Switch EKG Patterns!</button>
+					<button id="ekg-sound" class="pause">Turn EKG Sound Off!</button>
+					<button id="switch-resp-now">Switch Resp Patterns!</button>
+				</div> -->
+			</div>
+			</div><!-- /vsm-frame -->
+			
+<!--			<div id="telesim-top" class="float-left ii-border telesim-right" style="background-image: url('<?= BROWSER_SCENARIOS; ?>/default/images/top-dog.png')">
+				<div class="ausc-hotspot" data-coord="1-1-1" style="top: 75px; left: 100px;">1</div>
+				<div class="ausc-hotspot" data-coord="1-2-1" style="top: 75px; left: 125px;">2</div>
+				<div class="ausc-hotspot" data-coord="1-3-1" style="top: 100px; left: 100px;">3</div>
+				<div class="ausc-hotspot" data-coord="1-4-1" style="top: 100px; left: 125px;">4</div>
+			</div> -->
+			<div id="telesim-0" class="float-left ii-border telesim-right">
+				<select id="telesim-select-0" class="telesim-select">
+					<option value="">Please select</option>
+				</select>
+			</div>
+			<div id="telesim-1" class="float-left ii-border telesim-right">
+				<select id="telesim-select-1" class="telesim-select">
+					<option value="">Please select</option>
+				</select>
+				<div id="telesim-size" class="expand">+</div>
+			</div>
+			
 			<div id="event-monitor" class="float-right ii-border">
 				<table>
 				</table>
 			</div>
 			<div id="comment-box" class="float-left ii-border">
 				<input type="text" id="comment-input" value="Please enter comment for log">
-				<button id="comment-button" class="scenario-button float-left">Log Comment</button>				
+				<button id="comment-button" class="scenario-button float-left">Log Comment</button>
 			</div>
+			</div><!-- /ii-right-col -->
 			<div id="event-library" class="float-left"></div>
 
 			<div class="clearer"></div>

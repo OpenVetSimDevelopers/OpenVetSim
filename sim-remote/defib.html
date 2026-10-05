@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#14161a">
+<title>OpenVetSim Defibrillator</title>
+<link rel="stylesheet" href="css/defib.css">
+</head>
+<body>
+
+<main class="device" id="device" data-state="off">
+
+  <!-- ── Screen ─────────────────────────────────────────────────────────── -->
+  <section class="bezel">
+    <div class="screen" id="screen">
+
+      <header class="screen-top">
+        <span class="tag">II</span>
+        <span class="tag">x1.0</span>
+        <span class="tag">MANUAL</span>
+        <span class="spacer"></span>
+        <span class="link" id="link"><i></i><span id="link-label">SIM LINK</span></span>
+        <span class="elapsed" id="elapsed">00:00</span>
+      </header>
+
+      <div class="ecg-row">
+        <div class="ecg-slot">
+          <!-- The ECG is drawn by the patient monitor's own chart.js. These ids
+               are the ones it expects: vs-trace-1 is the ECG; vs-trace-2 is the
+               capnograph strip, which chart.init() always sets up but which the
+               defibrillator switches off and never shows. -->
+          <div id="vsm-frame">
+            <div id="vsm">
+              <canvas id="vs-trace-1" class="vs-trace" width="500" height="125"></canvas>
+              <canvas id="vs-trace-2" class="vs-trace" width="500" height="125"></canvas>
+            </div>
+          </div>
+          <div class="leads-off" id="leads-off">LEADS OFF</div>
+        </div>
+
+        <div class="hr-box">
+          <span class="hr-label">HR</span>
+          <!-- filled by controls.heartRate.displayValue(), with the monitor's
+               own blanking rules -->
+          <div id="vs-heartRhythm"><a class="display-rate">---</a></div>
+          <span class="hr-unit">bpm</span>
+        </div>
+      </div>
+
+      <footer class="screen-bottom">
+        <div class="readout energy-readout">
+          <span class="k">ENERGY</span>
+          <span class="v"><span id="energy">50</span><small>J</small></span>
+        </div>
+        <div class="status" id="status">
+          <span id="status-text">SELECT ENERGY</span>
+          <div class="charge-bar" id="charge-bar"><div id="charge-fill"></div></div>
+        </div>
+        <div class="readout shocks-readout">
+          <span class="k">SHOCKS</span>
+          <span class="v" id="shocks">0</span>
+        </div>
+      </footer>
+
+      <div class="boot" id="boot">
+        <div class="boot-title">DEFIBRILLATOR</div>
+        <div class="boot-sub">SELF TEST <span id="boot-result">…</span></div>
+      </div>
+      <div class="off-glass" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <!-- ── Controls ───────────────────────────────────────────────────────── -->
+  <section class="panel">
+
+    <div class="group group-power">
+      <button id="btn-power" class="key power" aria-label="Power on or off">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9" /><path d="M6.3 6.9a8 8 0 1 0 11.4 0" /></svg>
+      </button>
+      <span class="key-label">ON / OFF</span>
+    </div>
+
+    <div class="group">
+      <div class="step"><span class="num">1</span>ENERGY SELECT</div>
+      <div class="energy-keys">
+        <button id="btn-energy-down" class="key energy" aria-label="Decrease energy">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9l7 7 7-7" /></svg>
+        </button>
+        <button id="btn-energy-up" class="key energy" aria-label="Increase energy">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 15l7-7 7 7" /></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="step"><span class="num">2</span>CHARGE</div>
+      <button id="btn-charge" class="key charge">CHARGE</button>
+    </div>
+
+    <div class="group">
+      <div class="step"><span class="num">3</span>SHOCK</div>
+      <button id="btn-shock" class="key shock" aria-label="Shock">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12L13 2z" /></svg>
+      </button>
+    </div>
+
+  </section>
+</main>
+
+<script src="js/defib-shim.js"></script>
+<script src="/sim-ii/js/controls.js"></script>
+<script src="/sim-ii/js/chart.js"></script>
+<script src="js/defib-audio.js"></script>
+<script src="js/defib.js"></script>
+</body>
+</html>

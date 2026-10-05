@@ -408,6 +408,16 @@ resetAllParameters(void)
 	simmgr_shm->status.cardiac.ecg_indicator = 0;
 	simmgr_shm->status.cardiac.bp_cuff = 0;
 	simmgr_shm->status.cardiac.arrest = 0;
+	simmgr_shm->status.cardiac.abp_line = 0;
+	sprintf_s(simmgr_shm->status.cardiac.abp_waveform, STR_SIZE, "%s", "normal");
+	simmgr_shm->status.cardiac.pac_placed = 0;
+	sprintf_s(simmgr_shm->status.cardiac.pac_position, STR_SIZE, "%s", "cvp");
+	simmgr_shm->status.cardiac.pac_ra_mean = 5;
+	simmgr_shm->status.cardiac.pac_rv_sys = 25;
+	simmgr_shm->status.cardiac.pac_rv_dia = 5;
+	simmgr_shm->status.cardiac.pac_pa_sys = 25;
+	simmgr_shm->status.cardiac.pac_pa_dia = 12;
+	simmgr_shm->status.cardiac.pac_wedge_mean = 9;
 
 	// status/respiration
 	sprintf_s(simmgr_shm->status.respiration.left_lung_sound, STR_SIZE, "%s", "normal");
@@ -428,6 +438,7 @@ resetAllParameters(void)
 	simmgr_shm->status.respiration.spo2 = 95;
 	simmgr_shm->status.respiration.etco2 = 34;
 	sprintf_s(simmgr_shm->status.respiration.co2_waveform, STR_SIZE, "%s", "normal");
+	sprintf_s(simmgr_shm->status.respiration.spo2_waveform, STR_SIZE, "%s", "normal");
 	simmgr_shm->status.respiration.etco2_indicator = 0;
 	simmgr_shm->status.respiration.spo2_indicator = 0;
 	simmgr_shm->status.respiration.chest_movement = 0;
@@ -511,10 +522,21 @@ resetAllParameters(void)
 	simmgr_shm->instructor.cardiac.ecg_indicator = -1;
 	simmgr_shm->instructor.cardiac.bp_cuff = -1;
 	simmgr_shm->instructor.cardiac.arrest = -1;
+	simmgr_shm->instructor.cardiac.abp_line = -1;
+	sprintf_s(simmgr_shm->instructor.cardiac.abp_waveform, STR_SIZE, "%s", "");
+	simmgr_shm->instructor.cardiac.pac_placed = -1;
+	sprintf_s(simmgr_shm->instructor.cardiac.pac_position, STR_SIZE, "%s", "");
+	simmgr_shm->instructor.cardiac.pac_ra_mean = -1;
+	simmgr_shm->instructor.cardiac.pac_rv_sys = -1;
+	simmgr_shm->instructor.cardiac.pac_rv_dia = -1;
+	simmgr_shm->instructor.cardiac.pac_pa_sys = -1;
+	simmgr_shm->instructor.cardiac.pac_pa_dia = -1;
+	simmgr_shm->instructor.cardiac.pac_wedge_mean = -1;
 
 	// instructor/respiration
 	sprintf_s(simmgr_shm->instructor.respiration.left_lung_sound, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.respiration.co2_waveform, STR_SIZE, "%s", "");
+	sprintf_s(simmgr_shm->instructor.respiration.spo2_waveform, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.respiration.left_sound_in, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.respiration.left_sound_out, STR_SIZE, "%s", "");
 	sprintf_s(simmgr_shm->instructor.respiration.left_sound_back, STR_SIZE, "%s", "");
@@ -1725,6 +1747,66 @@ scan_commands(void)
 		}
 		simmgr_shm->instructor.cardiac.bp_cuff = -1;
 	}
+	if (simmgr_shm->instructor.cardiac.abp_line >= 0)
+	{
+		if (simmgr_shm->status.cardiac.abp_line != simmgr_shm->instructor.cardiac.abp_line)
+		{
+			simmgr_shm->status.cardiac.abp_line = simmgr_shm->instructor.cardiac.abp_line;
+			sprintf_s(buf, BUF_SIZE, "Probe: %s %s", "Arterial Line", (simmgr_shm->status.cardiac.abp_line == 1 ? "Attached" : "Removed"));
+			simlog_entry(buf);
+		}
+		simmgr_shm->instructor.cardiac.abp_line = -1;
+	}
+	if (strlen(simmgr_shm->instructor.cardiac.abp_waveform) > 0)
+	{
+		sprintf_s(simmgr_shm->status.cardiac.abp_waveform, STR_SIZE, "%s", simmgr_shm->instructor.cardiac.abp_waveform);
+		sprintf_s(simmgr_shm->instructor.cardiac.abp_waveform, STR_SIZE, "%s", "");
+	}
+	if (simmgr_shm->instructor.cardiac.pac_placed >= 0)
+	{
+		if (simmgr_shm->status.cardiac.pac_placed != simmgr_shm->instructor.cardiac.pac_placed)
+		{
+			simmgr_shm->status.cardiac.pac_placed = simmgr_shm->instructor.cardiac.pac_placed;
+			sprintf_s(buf, BUF_SIZE, "Probe: %s %s", "PA Catheter", (simmgr_shm->status.cardiac.pac_placed == 1 ? "Placed" : "Removed"));
+			simlog_entry(buf);
+		}
+		simmgr_shm->instructor.cardiac.pac_placed = -1;
+	}
+	if (strlen(simmgr_shm->instructor.cardiac.pac_position) > 0)
+	{
+		sprintf_s(simmgr_shm->status.cardiac.pac_position, STR_SIZE, "%s", simmgr_shm->instructor.cardiac.pac_position);
+		sprintf_s(simmgr_shm->instructor.cardiac.pac_position, STR_SIZE, "%s", "");
+	}
+	if (simmgr_shm->instructor.cardiac.pac_ra_mean >= 0)
+	{
+		simmgr_shm->status.cardiac.pac_ra_mean = simmgr_shm->instructor.cardiac.pac_ra_mean;
+		simmgr_shm->instructor.cardiac.pac_ra_mean = -1;
+	}
+	if (simmgr_shm->instructor.cardiac.pac_rv_sys >= 0)
+	{
+		simmgr_shm->status.cardiac.pac_rv_sys = simmgr_shm->instructor.cardiac.pac_rv_sys;
+		simmgr_shm->instructor.cardiac.pac_rv_sys = -1;
+	}
+	if (simmgr_shm->instructor.cardiac.pac_rv_dia >= 0)
+	{
+		simmgr_shm->status.cardiac.pac_rv_dia = simmgr_shm->instructor.cardiac.pac_rv_dia;
+		simmgr_shm->instructor.cardiac.pac_rv_dia = -1;
+	}
+	if (simmgr_shm->instructor.cardiac.pac_pa_sys >= 0)
+	{
+		simmgr_shm->status.cardiac.pac_pa_sys = simmgr_shm->instructor.cardiac.pac_pa_sys;
+		simmgr_shm->instructor.cardiac.pac_pa_sys = -1;
+	}
+	if (simmgr_shm->instructor.cardiac.pac_pa_dia >= 0)
+	{
+		simmgr_shm->status.cardiac.pac_pa_dia = simmgr_shm->instructor.cardiac.pac_pa_dia;
+		simmgr_shm->instructor.cardiac.pac_pa_dia = -1;
+	}
+	if (simmgr_shm->instructor.cardiac.pac_wedge_mean >= 0)
+	{
+		simmgr_shm->status.cardiac.pac_wedge_mean = simmgr_shm->instructor.cardiac.pac_wedge_mean;
+		simmgr_shm->instructor.cardiac.pac_wedge_mean = -1;
+	}
 	if (simmgr_shm->instructor.cardiac.arrest >= 0)
 	{
 		if (simmgr_shm->status.cardiac.arrest != simmgr_shm->instructor.cardiac.arrest)
@@ -1747,6 +1829,11 @@ scan_commands(void)
 	{
 		sprintf_s(simmgr_shm->status.respiration.co2_waveform, STR_SIZE, "%s", simmgr_shm->instructor.respiration.co2_waveform);
 		sprintf_s(simmgr_shm->instructor.respiration.co2_waveform, STR_SIZE, "%s", "");
+	}
+	if (strlen(simmgr_shm->instructor.respiration.spo2_waveform) > 0)
+	{
+		sprintf_s(simmgr_shm->status.respiration.spo2_waveform, STR_SIZE, "%s", simmgr_shm->instructor.respiration.spo2_waveform);
+		sprintf_s(simmgr_shm->instructor.respiration.spo2_waveform, STR_SIZE, "%s", "");
 	}
 	if (strlen(simmgr_shm->instructor.respiration.right_lung_sound) > 0)
 	{

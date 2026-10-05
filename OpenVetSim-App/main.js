@@ -209,8 +209,34 @@ function getLanIP() {
   return null;
 }
 
-// ─── Show QR code window so phones/tablets can connect to sim-remote ──────────
-async function showRemoteQR() {
+// ─── Show a QR code window so a phone or tablet can open a page ──────────────
+// Both pages are served by the simulator itself on port 40845, so they work
+// from any device on the same network without the PHP server, which only
+// listens on this computer.
+function showRemoteQR() {
+  return showConnectQR({
+    path:    '/sim-remote/',
+    heading: 'OpenVetSim Remote',
+    title:   'Connect Phone or Tablet',
+    hint:    'Scan with your phone or tablet camera',
+    accent:  '#22d3ee',
+  });
+}
+
+// The defibrillator is a separate page for a second tablet at the patient's
+// side, so it has its own QR code and a different accent colour - it should be
+// hard to scan the wrong one.
+function showDefibQR() {
+  return showConnectQR({
+    path:    '/sim-remote/defib.html',
+    heading: 'OpenVetSim Defibrillator',
+    title:   'Connect Defibrillator',
+    hint:    'Scan with the tablet that will be the defibrillator',
+    accent:  '#ff7a3d',
+  });
+}
+
+async function showConnectQR(opts) {
   const ip = getLanIP();
   if (!ip) {
     dialog.showErrorBox(
@@ -220,7 +246,7 @@ async function showRemoteQR() {
     return;
   }
 
-  const remoteURL = `http://${ip}:40845/sim-remote/`;
+  const remoteURL = `http://${ip}:40845${opts.path}`;
 
   let QRCode;
   try { QRCode = require('qrcode'); }
@@ -259,7 +285,7 @@ async function showRemoteQR() {
   h2 {
     font-size: 13px;
     font-weight: 700;
-    color: #22d3ee;
+    color: ${opts.accent};
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
@@ -287,10 +313,10 @@ async function showRemoteQR() {
 </style>
 </head>
 <body>
-<h2>OpenVetSim Remote</h2>
+<h2>${opts.heading}</h2>
 <div class="qr-box"><img src="${qrDataURL}" width="260" height="260" alt="QR code"></div>
 <div class="url">${remoteURL}</div>
-<div class="hint">Scan with your phone or tablet camera</div>
+<div class="hint">${opts.hint}</div>
 </body>
 </html>`;
 
@@ -301,7 +327,7 @@ async function showRemoteQR() {
     minimizable:  false,
     maximizable:  false,
     alwaysOnTop:  true,
-    title:        'Connect Phone or Tablet',
+    title:        opts.title,
     backgroundColor: '#111827',
     webPreferences: {
       nodeIntegration:  false,
@@ -566,6 +592,138 @@ function hidePhpView() {
   phpView.webContents.loadURL('about:blank').catch(() => {});
 }
 
+// ─── Scenario folder ──────────────────────────────────────────────────────────
+async function openScenarioFolder() {
+  const scenariosDir = path.join(getHtmlPath(), 'scenarios');
+  const err = await shell.openPath(scenariosDir);   // '' on success
+  if (err) {
+    dialog.showMessageBox(mainWin, {
+      type: 'warning',
+      title: 'Could Not Open Scenario Folder',
+      message: 'Could not open the scenarios folder.',
+      detail: scenariosDir + '\n\n' + err,
+      buttons: ['OK'],
+    });
+  }
+}
+
+// Reads the Scenario Select list (and any "Error in …/main.xml" lines ii.php
+// printed) from the instructor page. Returns null if the page isn't loaded.
+const SCENARIO_LIST_JS = `(() => {
+  const opts = document.querySelectorAll('#scenario-select select option');
+  if (!opts.length && !document.getElementById('scenario-select')) return null;
+  const errors = Array.from(document.querySelectorAll('span'))
+    .map(s => s.textContent.trim())
+    .filter(t => t.startsWith('Error in ') && t.endsWith('/main.xml'))
+    .map(t => t.slice('Error in '.length));
+  return { names: Array.from(opts).map(o => o.textContent.trim()), errors };
+})()`;
+
+async function readScenarioList(wc) {
+  try { return await wc.executeJavaScript(SCENARIO_LIST_JS, true); }
+  catch (_) { return null; }
+}
+
+// Simulator ▸ Reload Scenarios. ii.php builds the Scenario Select list by
+// scanning the scenarios folder every time the instructor page loads, and the
+// engine reads a scenario's main.xml only when it is started, so reloading the
+// page is all it takes to pick up scenarios added after startup.
+async function reloadScenarios() {
+  if (!mainWin || mainWin.isDestroyed() || !phpView) return;
+  const scenariosDir = path.join(getHtmlPath(), 'scenarios');
+
+  if (simState !== 'running') {
+    const { response } = await dialog.showMessageBox(mainWin, {
+      type: 'info',
+      title: 'Reload Scenarios',
+      message: 'The simulator isn’t running.',
+      detail: 'Start the simulator (Simulator ▸ Start). The scenario list is read '
+            + 'from the scenarios folder each time the instructor screen loads.\n\n'
+            + scenariosDir,
+      buttons: ['OK', 'Open Scenario Folder'],
+      defaultId: 0,
+    });
+    if (response === 1) openScenarioFolder();
+    return;
+  }
+
+  const wc = phpView.webContents;
+
+  // A running scenario lives in the simulator, not the page, so it carries on
+  // through the reload - but ask first, since the screen will blank briefly.
+  let state = 0;
+  try {
+    state = await wc.executeJavaScript(
+      "(typeof scenario !== 'undefined' && scenario.currentScenarioState) || 0", true);
+  } catch (_) { /* page not loaded - nothing to protect */ }
+  if (state === 1 || state === 2) {           // PAUSED or RUNNING (scenario.js)
+    const { response } = await dialog.showMessageBox(mainWin, {
+      type: 'question',
+      title: 'Reload Scenarios',
+      message: 'A scenario is in progress.',
+      detail: 'Reloading refreshes the instructor screen so the scenario list is '
+            + 'updated. The running scenario continues in the simulator.',
+      buttons: ['Reload', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response !== 0) return;
+  }
+
+  const before = await readScenarioList(wc);
+  try {
+    await wc.loadURL(PHP_URL);
+  } catch (err) {
+    dialog.showMessageBox(mainWin, {
+      type: 'warning',
+      title: 'Reload Scenarios',
+      message: 'The instructor screen could not be reloaded.',
+      detail: String(err && err.message || err),
+      buttons: ['OK'],
+    });
+    return;
+  }
+  resizePhpView();
+
+  const after = await readScenarioList(wc);
+  if (!after) return;
+
+  const n = after.names.length;
+  let message = n === 1 ? '1 scenario available.' : `${n} scenarios available.`;
+  const lines = [];
+  if (before) {
+    const added = after.names.filter(x => !before.names.includes(x));
+    const removed = before.names.filter(x => !after.names.includes(x));
+    if (added.length)   lines.push('New:\n' + added.map(x => '  • ' + x).join('\n'));
+    if (removed.length) lines.push('No longer in the folder:\n' + removed.map(x => '  • ' + x).join('\n'));
+    if (!added.length && !removed.length) lines.push('No new scenarios were found.');
+  }
+  if (after.errors.length) {
+    lines.push('These scenarios could not be read - check their main.xml:\n'
+             + after.errors.map(x => '  • ' + x).join('\n'));
+  }
+  lines.push('Scenario folder:\n' + scenariosDir);
+
+  const { response } = await dialog.showMessageBox(mainWin, {
+    type: after.errors.length ? 'warning' : 'info',
+    title: 'Reload Scenarios',
+    message,
+    detail: lines.join('\n\n'),
+    buttons: ['OK', 'Open Scenario Folder'],
+    defaultId: 0,
+  });
+  if (response === 1) openScenarioFolder();
+}
+
+// View-menu zoom for the instructor interface (see buildMenu). The built-in zoom
+// roles would act on loading.html underneath it instead.
+function zoomPhpView(step, reset) {
+  if (!phpView) return;
+  const wc = phpView.webContents;
+  const level = reset ? 0 : Math.max(-3, Math.min(3, wc.getZoomLevel() + step));
+  wc.setZoomLevel(level);
+}
+
 function resizePhpView() {
   if (!mainWin || mainWin.isDestroyed() || !phpView) return;
   const [w, h] = mainWin.getContentSize();
@@ -621,28 +779,15 @@ function buildMenu() {
     { type: 'separator' },
     { label: 'Open in Browser', click: () => shell.openExternal(PHP_URL) },
     { label: 'Connect Phone or Tablet…', click: showRemoteQR },
+    { label: 'Connect Defibrillator…',   click: showDefibQR  },
     { type: 'separator' },
     {
       label: 'Survey Sim Controller…',
       click: () => surveyController(mainWin, PORT_STATUS),
     },
     { type: 'separator' },
-    {
-      label: 'Open Scenario Folder',
-      click: async () => {
-        const scenariosDir = path.join(getHtmlPath(), 'scenarios');
-        const err = await shell.openPath(scenariosDir);   // '' on success
-        if (err) {
-          dialog.showMessageBox(mainWin, {
-            type: 'warning',
-            title: 'Could Not Open Scenario Folder',
-            message: 'Could not open the scenarios folder.',
-            detail: scenariosDir + '\n\n' + err,
-            buttons: ['OK'],
-          });
-        }
-      },
-    },
+    { label: 'Open Scenario Folder', click: openScenarioFolder },
+    { label: 'Reload Scenarios',     click: reloadScenarios },
     {
       label: 'Copy Video Log Path',
       click: () => {
@@ -666,14 +811,36 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' },
+        // Electron's built-in reload and zoom roles act on the window's own page,
+        // loading.html, which sits hidden underneath the instructor interface - so
+        // they appeared to do nothing. These act on the instructor interface itself.
+        // Reloading it also re-reads the scenarios folder, so a scenario added after
+        // startup shows up in Scenario Select.
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => { if (phpView) phpView.webContents.reload(); },
+        },
+        {
+          // Ignores the cache, so changed CSS and JavaScript are fetched fresh.
+          // Not the usual Shift+CmdOrCtrl+R: that is Simulator > Restart.
+          label: 'Force Reload',
+          accelerator: 'CmdOrCtrl+Alt+R',
+          click: () => { if (phpView) phpView.webContents.reloadIgnoringCache(); },
+        },
+        { role: 'toggleDevTools' },
         {
           label: 'Toggle PHP DevTools',
           accelerator: 'CmdOrCtrl+Shift+I',
           click: () => { if (phpView) phpView.webContents.toggleDevTools(); },
         },
         { type: 'separator' },
-        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0',     click: () => zoomPhpView(0, true) },
+        { label: 'Zoom In',     accelerator: 'CmdOrCtrl+Plus',  click: () => zoomPhpView(+0.5) },
+        // Cmd/Ctrl+= as well, since + needs Shift on most keyboards
+        { label: 'Zoom In',     accelerator: 'CmdOrCtrl+=',     click: () => zoomPhpView(+0.5),
+          visible: false, acceleratorWorksWhenHidden: true },
+        { label: 'Zoom Out',    accelerator: 'CmdOrCtrl+-',     click: () => zoomPhpView(-0.5) },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],

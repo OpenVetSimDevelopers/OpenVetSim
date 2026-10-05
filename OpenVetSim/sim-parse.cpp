@@ -109,6 +109,46 @@ cardiac_parse(const char* elem, const char* value, struct cardiac* card)
 	{
 		card->bp_cuff = atoi(value);
 	}
+	else if (strcmp(elem, ("abp_line")) == 0)
+	{
+		card->abp_line = atoi(value);
+	}
+	else if (strcmp(elem, ("abp_waveform")) == 0)
+	{
+		sprintf_s(card->abp_waveform, STR_SIZE, "%s", value);
+	}
+	else if (strcmp(elem, ("pac_placed")) == 0)
+	{
+		card->pac_placed = atoi(value);
+	}
+	else if (strcmp(elem, ("pac_ra_mean")) == 0)
+	{
+		card->pac_ra_mean = atoi(value);
+	}
+	else if (strcmp(elem, ("pac_rv_sys")) == 0)
+	{
+		card->pac_rv_sys = atoi(value);
+	}
+	else if (strcmp(elem, ("pac_rv_dia")) == 0)
+	{
+		card->pac_rv_dia = atoi(value);
+	}
+	else if (strcmp(elem, ("pac_pa_sys")) == 0)
+	{
+		card->pac_pa_sys = atoi(value);
+	}
+	else if (strcmp(elem, ("pac_pa_dia")) == 0)
+	{
+		card->pac_pa_dia = atoi(value);
+	}
+	else if (strcmp(elem, ("pac_wedge_mean")) == 0)
+	{
+		card->pac_wedge_mean = atoi(value);
+	}
+	else if (strcmp(elem, ("pac_position")) == 0)
+	{
+		sprintf_s(card->pac_position, STR_SIZE, "%s", value);
+	}
 	else if (strcmp(elem, ("heart_sound")) == 0)
 	{
 		sprintf_s(card->heart_sound, STR_SIZE, "%s", value);
@@ -282,6 +322,10 @@ respiration_parse(const char* elem, const char* value, struct respiration* resp)
 	else if (strcmp(elem, "co2_waveform") == 0)
 	{
 		sprintf_s(resp->co2_waveform, STR_SIZE, "%s", value);
+	}
+	else if (strcmp(elem, "spo2_waveform") == 0)
+	{
+		sprintf_s(resp->spo2_waveform, STR_SIZE, "%s", value);
 	}
 	else if (strcmp(elem, "transfer_time") == 0)
 	{
@@ -604,6 +648,14 @@ initializeParameterStruct(struct instructor* initParams)
 	initParams->cardiac.heart_sound_mute = -1;
 	initParams->cardiac.ecg_indicator = -1;
 	initParams->cardiac.bp_cuff = -1;
+	initParams->cardiac.abp_line = -1;
+	initParams->cardiac.pac_placed = -1;
+	initParams->cardiac.pac_ra_mean = -1;
+	initParams->cardiac.pac_rv_sys = -1;
+	initParams->cardiac.pac_rv_dia = -1;
+	initParams->cardiac.pac_pa_sys = -1;
+	initParams->cardiac.pac_pa_dia = -1;
+	initParams->cardiac.pac_wedge_mean = -1;
 	initParams->cardiac.transfer_time = -1;
 	initParams->cardiac.arrest = -1;
 
@@ -733,6 +785,22 @@ getValueFromName(char* param_class, char* param_element)
 			rval = simmgr_shm->status.cardiac.ecg_indicator;
 		else if (strcmp(param_element, "bp_cuff") == 0)
 			rval = simmgr_shm->status.cardiac.bp_cuff;
+		else if (strcmp(param_element, "abp_line") == 0)
+			rval = simmgr_shm->status.cardiac.abp_line;
+		else if (strcmp(param_element, "pac_placed") == 0)
+			rval = simmgr_shm->status.cardiac.pac_placed;
+		else if (strcmp(param_element, "pac_ra_mean") == 0)
+			rval = simmgr_shm->status.cardiac.pac_ra_mean;
+		else if (strcmp(param_element, "pac_rv_sys") == 0)
+			rval = simmgr_shm->status.cardiac.pac_rv_sys;
+		else if (strcmp(param_element, "pac_rv_dia") == 0)
+			rval = simmgr_shm->status.cardiac.pac_rv_dia;
+		else if (strcmp(param_element, "pac_pa_sys") == 0)
+			rval = simmgr_shm->status.cardiac.pac_pa_sys;
+		else if (strcmp(param_element, "pac_pa_dia") == 0)
+			rval = simmgr_shm->status.cardiac.pac_pa_dia;
+		else if (strcmp(param_element, "pac_wedge_mean") == 0)
+			rval = simmgr_shm->status.cardiac.pac_wedge_mean;
 		else if (strcmp(param_element, "cpr_time") == 0)
 			rval = simmgr_shm->status.cardiac.bp_cuff;
 		else if (strcmp(param_element, "arrest") == 0)

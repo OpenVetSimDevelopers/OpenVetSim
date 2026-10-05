@@ -124,11 +124,18 @@ var simmgr = {
 					}
 				}
 				/******** defib exit ************/
-				if(typeof(response.defibrillation.shock) != "undefined" && chart.ekg.rhythmIndex == 'defib' && response.defibrillation.shock == 0) {
-console.log('defib: here');
+				// Keyed on the shock flag rather than on the artifact still being on
+				// screen. A shock that converts the rhythm - a scenario trigger on the
+				// aed event - changes the rhythm inside the simulator's 2 s shock
+				// window, which replaces the artifact before this runs. The flag was
+				// then never cleared, and drawEkgPixel's end-of-pattern branch held
+				// the ECG on a flat line indefinitely after a successful shock.
+				if(typeof(response.defibrillation.shock) != "undefined" && controls.defib.shock == 1 && response.defibrillation.shock == 0) {
 					controls.defib.shock = 0;
-					chart.ekg.rhythmIndex = controls.heartRhythm.currentRhythm;
-					chart.updateEkgWaveform(chart.ekg.rhythmIndex, chart.heartRate);
+					if(chart.ekg.rhythmIndex == 'defib') {
+						chart.ekg.rhythmIndex = controls.heartRhythm.currentRhythm;
+						chart.updateEkgWaveform(chart.ekg.rhythmIndex, chart.heartRate);
+					}
 				}
 				
 				if( simmgr.timeCount > 4 ) {
@@ -275,6 +282,66 @@ console.log('defib: here');
 							controls.heartRate.displayValue();
 						}
 						buttons.setVSButton('ekg');
+					}
+
+					// arterial line placed / transducer zeroed
+					if(typeof(response.cardiac.abp_line) != "undefined") {
+						// Placing or removing the line switches the arterial strip on
+						// or off on both displays, and the others resize to fill the
+						// space (chart.setChannelEnabled).
+						if ( controls.abp.setLineConnected( response.cardiac.abp_line == 1 ) ) {
+							controls.abp.displayValue();
+						}
+						buttons.setABPButton();
+					}
+
+					// arterial waveform type
+					if(typeof(response.cardiac.abp_waveform) != "undefined" && response.cardiac.abp_waveform !== "") {
+						if ( controls.abp.waveformType != response.cardiac.abp_waveform ) {
+							controls.abp.waveformType = response.cardiac.abp_waveform;
+							// the morphology changes what the transducer reports
+							controls.abp.displayValue();
+						}
+					}
+
+					// PA catheter: placement, tip position and the right heart
+					// pressures. Placing or withdrawing the catheter adds or removes
+					// the fifth waveform channel, so it goes through setPlaced rather
+					// than being assigned directly.
+					if(typeof(response.cardiac.pac_placed) != "undefined") {
+						controls.pac.setPlaced( response.cardiac.pac_placed == 1 );
+						buttons.setPACButton();
+					}
+					if(typeof(response.cardiac.pac_position) != "undefined" && response.cardiac.pac_position !== "") {
+						if ( controls.pac.position != response.cardiac.pac_position ) {
+							controls.pac.setPosition( response.cardiac.pac_position );
+						}
+					}
+					var pacPressures = [
+						[ 'pac_ra_mean',    'raMean'    ],
+						[ 'pac_rv_sys',     'rvSys'     ],
+						[ 'pac_rv_dia',     'rvDia'     ],
+						[ 'pac_pa_sys',     'paSys'     ],
+						[ 'pac_pa_dia',     'paDia'     ],
+						[ 'pac_wedge_mean', 'wedgeMean' ]
+					];
+					var pacChanged = false;
+					for( var pi = 0; pi < pacPressures.length; pi++ ) {
+						var pField = pacPressures[pi][0];
+						var pProp  = pacPressures[pi][1];
+						if(typeof(response.cardiac[pField]) != "undefined") {
+							var pVal = parseInt(response.cardiac[pField]);
+							if( ! isNaN(pVal) && controls.pac[pProp] != pVal ) {
+								controls.pac[pProp] = pVal;
+								pacChanged = true;
+							}
+						}
+					}
+					if ( pacChanged ) {
+						// the waveforms are generated from these, so they have to be
+						// rebuilt - chart.pacWaveformType does that on the next tick
+						// by comparing the pressure signature
+						controls.pac.displayValue();
 					}
 
 					// bp cuff
@@ -823,6 +890,11 @@ if( profile.isVitalsMonitor ) {
 						controls.etCO2.waveformType = response.respiration.co2_waveform;
 					}
 
+					// plethysmograph waveform type
+					if(typeof(response.respiration.spo2_waveform) != "undefined" && response.respiration.spo2_waveform !== "") {
+						controls.SpO2.waveformType = response.respiration.spo2_waveform;
+					}
+
 					// etco2 indicator
 					if(typeof(response.respiration.etco2_indicator) != "undefined") {
 						var changed = false;
@@ -873,6 +945,12 @@ if( profile.isVitalsMonitor ) {
 							controls.SpO2.leadsConnected = false;					
 						}
 						if ( changed ) {
+							// as the ECG and capnograph do: the plethysmograph goes
+							// the moment the probe is removed, rather than lingering
+							// until the sweep has erased it
+							if( profile.isVitalsMonitor == true ) {
+								chart.clearStrip('pleth');
+							}
 							controls.SpO2.displayValue();
 						}
 						buttons.setVSButton('SpO2');
@@ -986,6 +1064,11 @@ if( profile.isVitalsMonitor ) {
 										scenario.stopScenario();
 									} else {
 										controls.nbp.displayNIBPDashes();
+										// Wipe every strip and readout in one go. Without
+										// this the traces stop being redrawn but erode a
+										// pixel at a time as the sweep passes, so the
+										// monitor dissolves instead of switching off.
+										chart.blankMonitor();
 									}
 console.log("New scenario state STOPPED");
 									$('.logout.debrief').show();

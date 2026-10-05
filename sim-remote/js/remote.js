@@ -101,6 +101,14 @@ const remote = {
         if (c.rate      !== undefined) this.setVal('hr',  c.rate,     'set:cardiac:rate');
         if (c.bps_sys   !== undefined) this.setVal('sys', c.bps_sys,  'set:cardiac:bps_sys');
         if (c.bps_dia   !== undefined) this.setVal('dia', c.bps_dia,  'set:cardiac:bps_dia');
+        if (c.abp_waveform !== undefined && c.abp_waveform !== '')
+            this.setSelect('sel-abpwave', c.abp_waveform);
+        if (c.abp_line !== undefined)
+            this.setSelect('sel-abpline', String(c.abp_line));
+        if (c.pac_placed !== undefined)
+            this.setSelect('sel-pacplaced', String(c.pac_placed));
+        if (c.pac_position !== undefined && c.pac_position !== '')
+            this.setSelect('sel-pacposition', c.pac_position);
         if (c.rhythm    !== undefined) this.setSelect('sel-rhythm',     c.rhythm);
         if (c.heart_sound !== undefined)       this.setSelect('sel-heart-sound', c.heart_sound);
         if (c.heart_sound_volume !== undefined) {
@@ -114,6 +122,8 @@ const remote = {
         if (r.etco2 !== undefined) this.setVal('etco2', r.etco2, 'set:respiration:etco2');
         if (r.co2_waveform !== undefined && r.co2_waveform !== '')
             this.setSelect('sel-co2wave', r.co2_waveform);
+        if (r.spo2_waveform !== undefined && r.spo2_waveform !== '')
+            this.setSelect('sel-plethwave', r.spo2_waveform);
         if (r.left_lung_sound  !== undefined) this.setSelect('sel-left-lung',  r.left_lung_sound);
         if (r.right_lung_sound !== undefined) this.setSelect('sel-right-lung', r.right_lung_sound);
         if (r.left_lung_sound_volume !== undefined) {
@@ -313,6 +323,12 @@ const remote = {
 
         const co2wave = document.getElementById('sel-co2wave')?.value;
         if (co2wave) params['set:respiration:co2_waveform'] = co2wave;
+
+        const plethwave = document.getElementById('sel-plethwave')?.value;
+        if (plethwave) params['set:respiration:spo2_waveform'] = plethwave;
+
+        const abpwave = document.getElementById('sel-abpwave')?.value;
+        if (abpwave) params['set:cardiac:abp_waveform'] = abpwave;
 
         params['set:respiration:transfer_time'] = time;
         this.send(params);

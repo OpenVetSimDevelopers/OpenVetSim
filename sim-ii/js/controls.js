@@ -105,10 +105,16 @@ See gpl.html
 					} else if(chart.ekg.vpcCount == -1) {
 						// see if we need to flag a new vpc, -1 indicated vpc has been completed and synch has been skipped.
 						chart.status.cardiac.synch = true;
+						chart.abpBeat();
+						chart.plethBeat();
+						chart.pacBeat();
 						controls.heartRate.isVPCCycle();
 					}
 				} else {
 					chart.status.cardiac.synch = true;
+					chart.abpBeat();
+					chart.plethBeat();
+					chart.pacBeat();
 				}
 	
 				if ( ! ( simmgr.isLocalDisplay() ))
@@ -271,6 +277,12 @@ See gpl.html
 				controls.awRR.displayValue();							
 			},
 			
+			// Show dashes regardless of sensor state - used when a scenario ends.
+			blankValue: function() {
+				$('.awRR a.alt-control-rate').html('---<span class="vs-lower-label"> bpm</span>');
+				$('#display-awRR').html('---');
+			},
+
 			displayValue: function() {
 				if ( ! ( simmgr.isLocalDisplay() ) )
 				{
@@ -477,6 +489,7 @@ See gpl.html
 		
 		SpO2: {
 			value: 98,
+			waveformType: 'normal',		// normal | poor | artifact - plethysmograph shape
 			minValue: 0,
 			maxValue: 100,
 			slideBar: '',
@@ -502,6 +515,11 @@ See gpl.html
 				controls.SpO2.slideBar.slider( "value", parseFloat( $('.strip-value.new').val() ) );
 			},
 			
+			// Show dashes regardless of sensor state - used when a scenario ends.
+			blankValue: function() {
+				$('#display-SpO2').html('---<span class="vs-lower-label"> %</span>');
+			},
+
 			displayValue: function(){
 				if ( ( profile.isVitalsMonitor == false ) || ( controls.SpO2.leadsConnected == true  && !controls.heartRhythm.arrest) ) {
 					$('#display-SpO2').html(controls.SpO2.value + '<span class="vs-lower-label"> %</span>');
@@ -512,7 +530,253 @@ See gpl.html
 			}
 
 		},
-		
+
+		// Direct (invasive) arterial blood pressure.
+		//
+		// The arterial line reads the same pressures the instructor already sets -
+		// controls.nbp.systolicValue / diastolicValue, fed from the engine's
+		// cardiac.bps_sys / bps_dia - but unlike the NIBP cuff, which only reports
+		// when a cycle completes, it displays them continuously with a computed
+		// mean and draws a pressure waveform synchronised to the ECG.
+		abp: {
+			lineConnected: false,		// arterial catheter placed and transducer zeroed
+			waveformType: 'normal',		// normal | overdamped | underdamped | poor | cpr
+			scaleMax: 160,				// mmHg at the top of the strip's pressure scale
+
+			// Tooltips for the ABP button in the sensor row.
+			connectHTML: 'Remove Arterial Line',
+			disconnectHTML: 'Place Arterial Line',
+
+			// Place or remove the line. The strip and its readout appear and
+			// disappear with it, and the other channels re-divide the space.
+			setLineConnected: function(on) {
+				on = ( on == true );
+				if( controls.abp.lineConnected == on ) {
+					return false;
+				}
+				controls.abp.lineConnected = on;
+				if( typeof chart !== 'undefined' && chart.setChannelEnabled ) {
+					chart.setChannelEnabled('abp', on);
+				}
+				return true;
+			},
+
+			// ---- the true pressures, as set by the instructor -------------------
+			// These define the range the waveform is drawn across. They are what a
+			// scenario sets and what a perfectly-transduced line would report.
+			setSystolic: function() {
+				var v = parseInt(controls.nbp.systolicValue);
+				return isNaN(v) ? 0 : v;
+			},
+
+			setDiastolic: function() {
+				var v = parseInt(controls.nbp.diastolicValue);
+				return isNaN(v) ? 0 : v;
+			},
+
+			// ---- the pressures the monitor displays -----------------------------
+			// Physiological states report the pressure that was set. Measurement
+			// artifacts do not: their numbers come from the peak and trough of the
+			// morphology actually being drawn, so the readout always agrees with the
+			// trace, exactly as a real transducer misreports a true pressure.
+			//
+			// Scenario authors:
+			//
+			//   normal, poor perfusion, CPR
+			//       The monitor displays the systolic and diastolic you set. A poorly
+			//       perfused patient set to 70/40 reads 70/40; the waveform shape
+			//       changes (slow upstroke, no dicrotic notch) but not the numbers.
+			//
+			//   overdamped, underdamped
+			//       The numbers deviate, because that is what the artifact is. For a
+			//       set pressure S/D:
+			//           displayed systolic  = D + max * (S - D)
+			//           displayed diastolic = D + min * (S - D)
+			//
+			//       morphology      min     max   | 120/80 displays as
+			//       overdamped     0.14    0.76   | 110/86  (94)  narrowed
+			//       underdamped   -0.06    1.41   | 136/78  (97)  widened
+			//
+			// Those multipliers are the measured min/max of the generated waveform
+			// (chart.abp.waveformRange), not hand-maintained figures: retuning a
+			// waveform in chart.initAbpWaveforms moves them automatically.
+			displayedSystolic: function() {
+				var s = controls.abp.setSystolic();
+				if( s <= 0 || typeof chart === 'undefined' ) {
+					return s;
+				}
+				var type = chart.abpWaveformType();
+				if( ! chart.abpWaveformDistorts( type ) ) {
+					return s;			// physiological state - reads true
+				}
+				var d = controls.abp.setDiastolic();
+				return Math.round( d + ( chart.abpWaveformRange( type ).max * ( s - d ) ) );
+			},
+
+			displayedDiastolic: function() {
+				var s = controls.abp.setSystolic();
+				var d = controls.abp.setDiastolic();
+				if( s <= 0 || typeof chart === 'undefined' ) {
+					return d;
+				}
+				var type = chart.abpWaveformType();
+				if( ! chart.abpWaveformDistorts( type ) ) {
+					return d;			// physiological state - reads true
+				}
+				return Math.round( d + ( chart.abpWaveformRange( type ).min * ( s - d ) ) );
+			},
+
+			// MAP = DAP + (SAP - DAP) / 3, computed from the DISPLAYED pressures.
+			//
+			// This is the standard clinical estimate rather than the true area under
+			// the waveform. A real monitor integrates, which would give a MAP a few
+			// mmHg higher (96 rather than 93 for a normal 120/80) and one that barely
+			// moves under damping. The estimate is used here because it is the
+			// formula a scenario author can predict without running the waveform;
+			// chart.abp.waveformRange[type].mean carries the integral if the true
+			// area-under-curve mean is ever wanted instead.
+			mean: function() {
+				var s = controls.abp.displayedSystolic();
+				var d = controls.abp.displayedDiastolic();
+				if( s <= 0 ) {
+					return 0;
+				}
+				return Math.floor( ( s - d ) / 3 ) + d;
+			},
+
+			init: function() {
+				controls.abp.displayValue();
+			},
+
+			// Show dashes regardless of line state - used when a scenario ends.
+			blankValue: function() {
+				$('#display-abp').html('---');
+				$('#display-abp-map').html('');
+			},
+
+			// Called once per beat from drawAbpPixel, as a monitor refreshes its
+			// numerics on each pulse.
+			displayValue: function() {
+				if ( profile.isVitalsMonitor == true && controls.abp.lineConnected == false ) {
+					$('#display-abp').html('---');
+					$('#display-abp-map').html('');
+					return;
+				}
+				if ( controls.abp.setSystolic() <= 0 ) {
+					$('#display-abp').html('---');
+					$('#display-abp-map').html('');
+					return;
+				}
+				$('#display-abp').html( controls.abp.displayedSystolic() + '/' + controls.abp.displayedDiastolic() );
+				$('#display-abp-map').html( '(' + controls.abp.mean() + ')<span class="vs-lower-label"> mmHg</span>' );
+			}
+		},
+
+		// Pulmonary artery (Swan-Ganz) catheter.
+		//
+		// Unlike the arterial line, which reads pressures the instructor already
+		// sets elsewhere, the right heart pressures are the catheter's own: nothing
+		// else in the simulator models them. They come from cardiac.pac_* in the
+		// engine and are set from the PA catheter dialog.
+		//
+		// The strip only exists while a catheter is in the patient. Placing one adds
+		// a fifth waveform channel and the other four give up space for it; pulling
+		// it out gives the space back. See chart.setChannelEnabled.
+		pac: {
+			placed: false,				// catheter in the patient
+			position: 'cvp',			// cvp | ra | rv | pa | wedge - where the tip is
+
+			// Right heart pressures, mmHg. Defaults are normal for a medium dog.
+			raMean: 5,					// RA / CVP mean
+			rvSys: 25,					// RV systolic
+			rvDia: 5,					// RV end-diastolic
+			paSys: 25,					// PA systolic - matches RV systolic across the
+										// open pulmonic valve
+			paDia: 12,					// PA diastolic - the step-up that says the
+										// valve has been crossed
+			wedgeMean: 9,				// PAWP / PCWP mean
+
+			// What the monitor labels the trace, by position. The label changes with
+			// the tip: the number means something different in each chamber.
+			labels: { cvp: 'CVP', ra: 'RA', rv: 'RV', pa: 'PA', wedge: 'PAWP' },
+
+			// Tooltips for the probe icon, matching the other sensors.
+			connectHTML: 'Remove PA Catheter',
+			disconnectHTML: 'Place PA Catheter',
+
+			// Positions reported as a mean pressure rather than systolic/diastolic.
+			// A venous or wedge trace has no meaningful systole.
+			isMeanPosition: function(pos) {
+				return ( pos == 'cvp' || pos == 'ra' || pos == 'wedge' );
+			},
+
+			// Show or hide the strip. Idempotent - chart.setChannelEnabled returns
+			// immediately if nothing changed, so this is safe to call from a status
+			// poll on every cycle.
+			setPlaced: function(on) {
+				on = ( on == true );
+				if( controls.pac.placed == on ) {
+					return;
+				}
+				controls.pac.placed = on;
+				if( typeof chart !== 'undefined' && chart.setChannelEnabled ) {
+					chart.setChannelEnabled('pac', on);
+				}
+				controls.pac.displayValue();
+			},
+
+			setPosition: function(pos) {
+				if( ! controls.pac.labels[pos] ) {
+					pos = 'cvp';
+				}
+				controls.pac.position = pos;
+				controls.pac.displayValue();
+			},
+
+			// PA mean = PAD + (PAS - PAD) / 3, the same clinical estimate the
+			// arterial line uses. Reported alongside the PA systolic/diastolic
+			// because PA mean is the number that drives clinical decisions.
+			paMean: function() {
+				return Math.floor( ( controls.pac.paSys - controls.pac.paDia ) / 3 ) + controls.pac.paDia;
+			},
+
+			init: function() {
+				controls.pac.displayValue();
+			},
+
+			blankValue: function() {
+				$('#display-pac-label').html('');
+				$('#display-pac').html('---');
+				$('#display-pac-sub').html('');
+			},
+
+			// Called once per beat from drawPacPixel, as a monitor refreshes its
+			// numerics on each pulse.
+			displayValue: function() {
+				if( controls.pac.placed == false ) {
+					controls.pac.blankValue();
+					return;
+				}
+				var p = controls.pac.position;
+				$('#display-pac-label').html( controls.pac.labels[p] );
+
+				if( controls.pac.isMeanPosition(p) ) {
+					var m = ( p == 'wedge' ) ? controls.pac.wedgeMean : controls.pac.raMean;
+					$('#display-pac').html( m );
+					$('#display-pac-sub').html( '<span class="vs-lower-label">mmHg</span>' );
+					return;
+				}
+				if( p == 'rv' ) {
+					$('#display-pac').html( controls.pac.rvSys + '/' + controls.pac.rvDia );
+					$('#display-pac-sub').html( '<span class="vs-lower-label">mmHg</span>' );
+					return;
+				}
+				// PA: systolic/diastolic with the mean, as the arterial line does
+				$('#display-pac').html( controls.pac.paSys + '/' + controls.pac.paDia );
+				$('#display-pac-sub').html( '(' + controls.pac.paMean() + ')<span class="vs-lower-label"> mmHg</span>' );
+			}
+		},
+
 		etCO2: {
 			value: 34,
 			minValue: 0,
@@ -540,6 +804,12 @@ See gpl.html
 				controls.etCO2.slideBar.slider( "value", parseInt( $('.strip-value.new').val() ) );
 			},
 			
+			// Show dashes regardless of sensor state - used when a scenario ends.
+			blankValue: function() {
+				$('#vs-etCO2 a').html('---<span class="vs-upper-label"> mmHg</span>');
+				clearTimeout( chart.resp.blankTimer );
+			},
+
 			displayValue: function() {
 				if ( profile.isVitalsMonitor == true ) {
 					if( controls.CO2.leadsConnected == false || controls.etCO2.value == 0 ) {

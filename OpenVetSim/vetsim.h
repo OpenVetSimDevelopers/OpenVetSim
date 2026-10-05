@@ -95,6 +95,21 @@ struct cardiac
 	int ecg_indicator;
 	int bp_cuff;
 	int arrest;
+	int abp_line;					// Arterial line placed and transducer zeroed
+	char abp_waveform[STR_SIZE];	// normal, overdamped, underdamped, poor, cpr
+
+	// Pulmonary artery catheter. pac_position is where the tip is sitting, which
+	// is what selects the morphology drawn: cvp, ra, rv, pa, wedge.
+	// CVP and RA share pac_ra_mean - they are the same pressure measured either
+	// side of the SVC/RA junction.
+	int pac_placed;					// PA catheter in place
+	char pac_position[STR_SIZE];	// cvp, ra, rv, pa, wedge
+	int pac_ra_mean;				// RA / CVP mean pressure, mmHg
+	int pac_rv_sys;					// RV systolic
+	int pac_rv_dia;					// RV end-diastolic
+	int pac_pa_sys;					// PA systolic
+	int pac_pa_dia;					// PA diastolic
+	int pac_wedge_mean;				// PAWP mean
 };
 
 struct scenario
@@ -143,6 +158,7 @@ struct respiration
 	int awRR;					// Calculated rate
 	int etco2;					// End Tidal CO2
 	char co2_waveform[STR_SIZE];	// normal, rebreathing, obstructive, curare
+	char spo2_waveform[STR_SIZE];	// normal, poor, artifact - plethysmograph shape
 	int transfer_time;			// Trend length for change in rate;
 	int etco2_indicator;
 	int spo2_indicator;

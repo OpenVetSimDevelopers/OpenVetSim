@@ -83,7 +83,7 @@
                 <left>325</left>
             </control>
             <control>
-                <title>CPR</title>
+                <title>Comps</title>
                 <id>button-cpr</id>
                 <top>20</top>
                 <left>450</left>
@@ -113,7 +113,7 @@
                 <left>450</left>
             </control>
             <control>
-                <title>Palpate</title>
+                <title>Pulse</title>
                 <id>button-palpate</id>
                 <top>20</top>
                 <left>390</left>
@@ -123,6 +123,18 @@
                 <id>button-Tperi</id>
                 <top>350</top>
                 <left>110</left>
+            </control>
+            <control>
+                <title>PA Cath</title>
+                <id>button-pac</id>
+                <top>350</top>
+                <left>165</left>
+            </control>
+            <control>
+                <title>ABP</title>
+                <id>button-abp</id>
+                <top>350</top>
+                <left>240</left>
             </control>
         </controls>
     </profile>

@@ -46,18 +46,110 @@ See gpl.html
 		margin: -3px 0 -3px -5px;
 	}
 
+	/* Both columns are placed by chart.applyLayout() in design pixels; the
+	   readout blocks inside the right column are absolutely positioned against
+	   their own strips, so this is just the containing box. */
 	#vs-left-col {
-		width: 500px;
-		position: relative;
-		float: left;
-		height: 250px;
+		position: absolute;
+		left: 0;
+		top: 0;
 	}
-	
+
 	#vs-right-col {
-		position: relative;
-		float: left;
-		margin: 10px 0 0 0px;
+		position: absolute;
+		left: 0;
+		top: 0;
 	}
+
+		/* One readout block per waveform channel.
+		   chart.applyLayout() sets top, height and --vs-scale on each block, so a
+		   block lines up with its own strip and its type shrinks as strips get
+		   shorter. Adding a fourth or fifth waveform needs no CSS change: at five
+		   channels --vs-scale is about 0.6 and everything below scales with it.
+		   overflow:hidden is the guarantee that a block can never spill into the
+		   channel beneath it, whatever the font metrics do. */
+		.vs-readout {
+			position: absolute;
+			left: 0;
+			width: 360px;
+			overflow: hidden;
+			/* Centre the label and number vertically in the strip's band, so each
+			   reading sits level with its own waveform rather than at the top of
+			   the band. Flex items also contain the floats inside them. */
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+		}
+			.vs-readout .vs-controls {
+				margin: 0;
+				width: 100%;
+			}
+			/* A channel whose readout carries a second, derived value places them
+			   side by side rather than stacked, so the block still fits inside its
+			   own strip band. awRR is derived from the capnograph, so it sits
+			   beside ETCO2 and lines up with the same waveform. */
+			.vs-readout.two-col {
+				display: flex;
+				flex-direction: row;
+				align-items: center;
+				justify-content: flex-start;
+				gap: 14px;
+			}
+				.vs-readout.two-col > .vs-readout-col {
+					flex: 1 1 0;
+					min-width: 0;
+				}
+				.vs-readout.two-col .vs-controls .display-rate,
+				.vs-readout.two-col .strip-label {
+					width: 100%;
+				}
+			.vs-readout .strip-label {
+				font-size: calc(24px * var(--vs-scale, 1));
+				line-height: 1.05;
+				white-space: nowrap;
+			}
+			/* .vs-controls .display-rate below has equal specificity and comes
+			   later in the file, so this needs the extra class to win. */
+			.vs-readout .vs-controls .display-rate {
+				font-size: calc(46px * var(--vs-scale, 1));
+				line-height: 1.05;
+				width: 360px;
+				margin: 0;
+				/* Not floated, as it is elsewhere: a float is left out of its block's
+				   height, so the centring above would ignore the number and the HR
+				   reading would sit below its strip's centre line. */
+				float: none;
+				display: block;
+				white-space: nowrap;
+			}
+			/* ... and for the same reason the HR block takes its number's height
+			   rather than the fixed 30px it has outside a readout. */
+			.vs-readout #vs-heartRhythm {
+				height: auto;
+			}
+			.vs-readout .vs-upper-label,
+			.vs-readout .vs-lower-label {
+				font-size: calc(15px * var(--vs-scale, 1));
+			}
+			/* awRR is derived from the capnograph, so it is a secondary reading
+			   inside the ETCO2 block rather than a channel of its own. */
+			.vs-readout .alt-control.awRR {
+				float: none;
+				clear: both;
+				width: 100%;
+				margin: 0;
+			}
+				.vs-readout .alt-control.awRR a.alt-control-title {
+					font-size: calc(24px * var(--vs-scale, 1));
+					line-height: 1.05;
+					margin: 0;
+				}
+				.vs-readout .alt-control.awRR a.alt-control-rate {
+					font-size: calc(46px * var(--vs-scale, 1));
+					line-height: 1.05;
+					margin: 0;
+					white-space: nowrap;
+				}
 	
 		.vs-controls {
 			margin: 0px 0 10px 0;
@@ -71,7 +163,6 @@ See gpl.html
 			}
 				#vs-heartRhythm {
 					color: green;
-					margin-bottom: 57px;
 					height: 30px;
 				}
 				#vs-awRR {
@@ -122,17 +213,19 @@ See gpl.html
 			border: 1px solid white;
 			padding: 6px;
 		}
+		/* awRR is derived from the capnograph, so it lives inside the ETCO2
+		   channel's readout block and is positioned with that strip by
+		   chart.applyLayout() rather than pinned to the monitor. */
 		.alt-control.awRR {
 			width: 140px;
-			position: absolute;
-			top: 220px;
-			right: 8px;
+			position: static;
+			margin: 4px 0 0 0;
 		}
+		/* SpO2 has no waveform channel yet, so it flows in the wide column with
+		   Temp and NIBP. It moves into a readout block when a pleth strip is
+		   added - see chart.channels. */
 		.alt-control.SpO2 {
 			width: 120px;
-			position: absolute;
-			top: 290px;
-			right: 29px;
 		}
 		
 		#nibp-read-in-progress {
@@ -140,7 +233,11 @@ See gpl.html
 			font-size: 22px;
 			position: absolute;
 			top: -1px;
-			right: 40px;
+			/* Anchored to the left of its block rather than the right: the NIBP
+			   block is much wider on the design canvas than it used to be, and a
+			   right anchor left this stranded at the far edge of the monitor. */
+			left: 190px;
+			right: auto;
 		}
 		
 .wide-col {
@@ -168,7 +265,12 @@ button.nvs-button {
 	width: 90px;
 	position: absolute;
 	bottom: 0;
-	right: 50px;
+	/* Beside the PR reading, on the same line. Anchored from the left: the NIBP
+	   block is 640 design px wide on the 16:9 monitor, and a right anchor left the
+	   button stranded at the far side, well away from the numbers. 165 px clears a
+	   three-digit pulse rate. */
+	left: 165px;
+	right: auto;
 }
 	#vs-nbp {
 		margin: 10px 0 0 0;
@@ -216,6 +318,7 @@ button.nvs-button {
 		img.nvs-button.tele-sim {
 			width: 40px;
 		}
+
 	h2.nvs-button {
 		position: absolute;
 		font-size: 14px;
@@ -253,6 +356,10 @@ button.nvs-button {
 }
 .color-blue {
 	color: #0066FF;
+}
+/* PA catheter - red and yellow are already taken by ABP and SpO2 */
+.color-cyan {
+	color: #66d9ff;
 }
 
 .vs-upper-label {
@@ -319,3 +426,111 @@ img.telesim-repeat {
     user-select: none;        /* prevent text selection during drag */
     -webkit-user-select: none;
 }
+
+/* ---- Arterial blood pressure readout ------------------------------------ */
+/* ABP carries three numbers on two lines rather than one short figure, so its
+   primary line is the largest that still fits the 360px column instead of
+   matching the single-value channels exactly. Both lines scale with --vs-scale
+   like every other readout. */
+	#vs-abp {
+		width: 360px;
+	}
+		/* The 360px column fits "120/80" at the same base size as the
+		   single-value channels, so the readouts finally match exactly. */
+		.vs-readout .display-abp {
+			font-size: calc(46px * var(--vs-scale, 1));
+			float: left;
+			clear: both;
+			margin: 0;
+			width: 360px;
+			line-height: 1.05;
+			white-space: nowrap;
+		}
+		.vs-readout .display-abp-map {
+			font-size: calc(24px * var(--vs-scale, 1));
+			float: left;
+			clear: both;
+			margin: 0;
+			width: 360px;
+			line-height: 1.05;
+			white-space: nowrap;
+		}
+	a.display-abp.color-red, a.display-abp-map.color-red {
+		color: #ff4d4d;
+	}
+
+
+/* ---- PA catheter readout, beside the pulmonary artery strip -------------- */
+/* Same scaled type as the arterial readout: the value is a pressure and may be
+   either a single mean or a systolic/diastolic pair, depending on where the
+   catheter tip is. */
+	#vs-pac {
+		width: 360px;
+	}
+		.vs-readout .display-pac {
+			font-size: calc(46px * var(--vs-scale, 1));
+			float: left;
+			clear: both;
+			margin: 0;
+			width: 360px;
+			line-height: 1.05;
+			white-space: nowrap;
+		}
+		.vs-readout .display-pac-sub {
+			font-size: calc(24px * var(--vs-scale, 1));
+			float: left;
+			clear: both;
+			margin: 0;
+			width: 360px;
+			line-height: 1.05;
+			white-space: nowrap;
+		}
+	a.display-pac.color-cyan, a.display-pac-sub.color-cyan {
+		color: #66d9ff;
+	}
+
+
+/* ---- SpO2 readout, beside the plethysmograph ---------------------------- */
+/* SpO2 is now a waveform channel rather than a bare number in the bottom row,
+   so its block follows the same scaled type as the other channel readouts. */
+	.vs-readout .alt-control.SpO2 {
+		float: none;
+		clear: both;
+		width: 100%;
+		margin: 0;
+		position: static;
+	}
+		.vs-readout .alt-control.SpO2 a.alt-control-title {
+			display: none;			/* the channel label above already says SpO2 */
+		}
+		.vs-readout .alt-control.SpO2 a.alt-control-rate {
+			font-size: calc(46px * var(--vs-scale, 1));
+			line-height: 1.05;
+			margin: 0;
+			white-space: nowrap;
+			float: left;
+			clear: both;
+		}
+
+/* ---- Clock block, lower-left of the numbers row ------------------------- */
+/* Positioned and given the full row height by chart.layoutBottomRow(). */
+	#vs-clock {
+		text-align: left;
+	}
+		#vs-clock a.alt-control-title {
+			font-size: 22px;
+			margin: 0 0 6px 0;
+			float: left;
+			clear: both;
+		}
+		#vs-clock #clock {
+			float: left;
+			clear: both;
+			margin: 0;
+			color: #ffffff;
+			font-size: 46px;
+			border: 2px solid #ffffff;
+			border-radius: 4px;
+			padding: 8px 12px;
+			line-height: 1;
+		}

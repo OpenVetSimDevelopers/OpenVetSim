@@ -1,0 +1,413 @@
+/* ==========================================================================
+   OpenVetSim defibrillator - a generic manual defibrillator for a tablet.
+   Fills the viewport in either orientation with no scrolling.
+   ========================================================================== */
+
+:root {
+	--room:       #0d0e11;
+	--body-hi:    #353a42;
+	--body-lo:    #1c1f24;
+	--bezel:      #08090b;
+	--ecg:        #3dff74;
+	--ecg-dim:    #1d6b38;
+	--amber:      #ffc531;
+	--red:        #ff3b30;
+	--label:      #c3cad4;
+	--label-dim:  #7d8693;
+	--mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+	--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0;
+	height: 100%;
+	background: var(--room);
+	overflow: hidden;
+}
+
+body {
+	height: 100vh;
+	height: 100dvh;
+	display: flex;
+	font-family: var(--sans);
+	color: var(--label);
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
+}
+
+/* ── Device body ─────────────────────────────────────────────────────────── */
+
+.device {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	margin: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+	        max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+	padding: clamp(10px, 1.8vw, 20px);
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) clamp(150px, 19vw, 230px);
+	gap: clamp(10px, 1.8vw, 20px);
+	border-radius: clamp(16px, 2.6vw, 30px);
+	background:
+		linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0) 30%),
+		linear-gradient(160deg, var(--body-hi), var(--body-lo));
+	box-shadow:
+		inset 0 1px 0 rgba(255,255,255,0.10),
+		inset 0 -2px 0 rgba(0,0,0,0.45),
+		0 14px 40px rgba(0,0,0,0.55);
+}
+
+/* ── Screen ──────────────────────────────────────────────────────────────── */
+
+.bezel {
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	padding: clamp(6px, 1vw, 12px);
+	border-radius: clamp(10px, 1.6vw, 18px);
+	background: var(--bezel);
+	box-shadow: inset 0 3px 8px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.screen {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	background: #000;
+	border-radius: 6px;
+	overflow: hidden;
+	font-family: var(--mono);
+	color: #dfe6ee;
+}
+
+.screen-top {
+	display: flex;
+	align-items: center;
+	gap: 0.9em;
+	padding: 0.55em 0.9em;
+	font-size: clamp(11px, 1.35vw, 16px);
+	color: var(--ecg);
+	border-bottom: 1px solid #10261a;
+}
+.screen-top .tag { letter-spacing: 0.04em; }
+.screen-top .spacer { flex: 1; }
+.screen-top .elapsed { color: #dfe6ee; font-variant-numeric: tabular-nums; }
+
+.link { display: inline-flex; align-items: center; gap: 0.45em; color: var(--label-dim); }
+.link i {
+	width: 0.6em; height: 0.6em; border-radius: 50%;
+	background: var(--ecg);
+	box-shadow: 0 0 6px var(--ecg);
+}
+.link.down { color: var(--red); }
+.link.down i { background: var(--red); box-shadow: 0 0 6px var(--red); animation: flash 1s steps(1) infinite; }
+
+/* ECG row: trace on the left, heart rate on the right */
+.ecg-row {
+	flex: 1;
+	min-height: 0;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+}
+
+.ecg-slot {
+	position: relative;
+	min-width: 0;
+}
+
+/* chart.fitToFrame() scales #vsm to the frame's width and sets an inline pixel
+   width on the frame. Holding the frame at 100% lets it be re-measured when the
+   tablet is rotated, rather than staying at its first width. */
+#vsm-frame {
+	width: 100% !important;
+	position: relative;
+	overflow: hidden;
+}
+#vsm { position: relative; }
+#vs-trace-2 { display: none !important; }
+
+.leads-off {
+	position: absolute;
+	inset: 0;
+	display: none;
+	align-items: center;
+	justify-content: center;
+	font-size: clamp(16px, 2.6vw, 30px);
+	letter-spacing: 0.12em;
+	color: var(--amber);
+}
+.device.no-ecg .leads-off { display: flex; }
+.device.no-ecg .leads-off::before {
+	content: "";
+	position: absolute;
+	left: 3%; right: 3%; top: 68%;
+	border-top: 2px dashed #2b2f36;
+}
+
+.hr-box {
+	display: grid;
+	justify-items: end;
+	padding: 0 clamp(10px, 1.8vw, 22px) 0 clamp(6px, 1vw, 12px);
+	color: var(--ecg);
+	min-width: 4.2em;
+	font-size: clamp(11px, 1.35vw, 16px);
+}
+.hr-label { letter-spacing: 0.1em; }
+.hr-unit { color: var(--ecg-dim); }
+#vs-heartRhythm a.display-rate {
+	color: var(--ecg);
+	text-decoration: none;
+	font-size: clamp(40px, 6.6vw, 92px);
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+/* controls.js appends its own " bpm"; this screen prints the unit separately */
+#vs-heartRhythm .vs-upper-label { display: none; }
+
+/* Status band */
+.screen-bottom {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: clamp(8px, 1.6vw, 20px);
+	padding: 0.6em 1em 0.75em;
+	border-top: 1px solid #1c1f24;
+	font-size: clamp(11px, 1.35vw, 16px);
+}
+
+.readout { display: grid; line-height: 1.05; }
+.readout .k { color: var(--label-dim); letter-spacing: 0.08em; font-size: 0.85em; }
+.readout .v {
+	font-size: clamp(26px, 4vw, 52px);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.readout .v small { font-size: 0.45em; margin-left: 0.15em; font-weight: 500; }
+.energy-readout .v { color: var(--amber); }
+.shocks-readout { text-align: right; }
+.shocks-readout .v { color: #dfe6ee; }
+
+.status {
+	display: grid;
+	gap: 0.45em;
+	justify-items: center;
+	text-align: center;
+	font-size: clamp(13px, 1.9vw, 24px);
+	letter-spacing: 0.06em;
+	color: #dfe6ee;
+}
+
+.charge-bar {
+	width: min(100%, 22em);
+	height: 0.55em;
+	border: 1px solid #3a3f47;
+	border-radius: 3px;
+	overflow: hidden;
+	visibility: hidden;
+}
+#charge-fill {
+	height: 100%;
+	width: 0%;
+	background: linear-gradient(90deg, #a87c00, var(--amber));
+}
+
+.device[data-state="charging"] .status { color: var(--amber); }
+.device[data-state="charging"] .charge-bar,
+.device[data-state="ready"] .charge-bar,
+.device[data-state="warning"] .charge-bar { visibility: visible; }
+.device[data-state="ready"] #charge-fill,
+.device[data-state="warning"] #charge-fill { width: 100%; }
+.device[data-state="ready"] .status { color: var(--amber); animation: flash 1.1s steps(1) infinite; }
+.device[data-state="warning"] .status { color: var(--red); animation: flash 0.5s steps(1) infinite; }
+.status.msg-done { color: #ffffff; }
+.status.msg-alert { color: var(--red); }
+
+/* Power off: the glass goes dark over everything */
+.off-glass {
+	position: absolute;
+	inset: 0;
+	background:
+		linear-gradient(125deg, rgba(255,255,255,0) 40%, rgba(255,255,255,0.045) 48%, rgba(255,255,255,0) 56%),
+		#050607;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.25s;
+}
+.device[data-state="off"] .off-glass { opacity: 1; }
+
+.boot {
+	position: absolute;
+	inset: 0;
+	display: none;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.8em;
+	background: #000;
+	color: var(--ecg);
+	font-size: clamp(14px, 2vw, 22px);
+	letter-spacing: 0.14em;
+}
+.boot-title { font-size: 1.4em; }
+.boot-sub { color: #dfe6ee; }
+.device[data-state="boot"] .boot { display: flex; }
+
+/* ── Control panel ───────────────────────────────────────────────────────── */
+
+.panel {
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	gap: clamp(8px, 1.4vh, 16px);
+	padding: clamp(4px, 0.8vw, 8px) 0;
+}
+
+.group { display: grid; gap: clamp(5px, 0.9vh, 10px); justify-items: stretch; }
+.group-power { justify-items: center; }
+
+.step {
+	display: flex;
+	align-items: center;
+	gap: 0.55em;
+	font-size: clamp(10px, 1.2vw, 13px);
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	color: var(--label);
+}
+.step .num {
+	display: inline-grid;
+	place-items: center;
+	width: 1.7em; height: 1.7em;
+	border-radius: 50%;
+	border: 1.5px solid currentColor;
+	font-size: 0.95em;
+}
+
+.key-label {
+	font-size: clamp(9px, 1.1vw, 12px);
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	color: var(--label-dim);
+}
+
+.key {
+	appearance: none;
+	-webkit-appearance: none;
+	border: 0;
+	margin: 0;
+	padding: 0;
+	cursor: pointer;
+	font: inherit;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	color: #15171a;
+	border-radius: 12px;
+	min-height: clamp(48px, 8.5vh, 84px);
+	display: grid;
+	place-items: center;
+	box-shadow:
+		inset 0 1px 0 rgba(255,255,255,0.35),
+		inset 0 -3px 0 rgba(0,0,0,0.30),
+		0 4px 0 rgba(0,0,0,0.55),
+		0 6px 14px rgba(0,0,0,0.35);
+	transition: transform 0.05s, box-shadow 0.05s, filter 0.2s, opacity 0.2s;
+}
+.key:active {
+	transform: translateY(3px);
+	box-shadow:
+		inset 0 1px 0 rgba(255,255,255,0.25),
+		inset 0 -1px 0 rgba(0,0,0,0.30),
+		0 1px 0 rgba(0,0,0,0.55),
+		0 2px 6px rgba(0,0,0,0.35);
+}
+.key svg {
+	width: 46%;
+	max-width: 44px;
+	height: auto;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2.6;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+.key[aria-disabled="true"] { filter: saturate(0.35) brightness(0.6); }
+
+.key.power {
+	width: clamp(60px, 9vh, 88px);
+	height: clamp(60px, 9vh, 88px);
+	min-height: 0;
+	border-radius: 50%;
+	color: #9aa3ae;
+	background: radial-gradient(circle at 50% 35%, #4a505a, #2a2e35);
+	outline: 3px solid #1c1f24;
+	outline-offset: 2px;
+}
+.device:not([data-state="off"]) .key.power {
+	color: var(--ecg);
+	outline-color: var(--ecg);
+	box-shadow:
+		0 0 14px rgba(61,255,116,0.45),
+		inset 0 1px 0 rgba(255,255,255,0.25),
+		0 4px 0 rgba(0,0,0,0.55);
+}
+
+.energy-keys { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px, 1vw, 10px); }
+.key.energy { background: linear-gradient(180deg, #d9dde3, #a9afb8); color: #22262c; }
+
+.key.charge {
+	background: linear-gradient(180deg, #ffd84a, #e3a900);
+	font-size: clamp(14px, 1.9vw, 20px);
+}
+
+.key.shock {
+	min-height: clamp(64px, 12vh, 120px);
+	background: radial-gradient(circle at 50% 35%, #ff7a3d, #d9360b);
+	color: #fff;
+}
+.key.shock svg { fill: currentColor; stroke-width: 1.2; max-width: 52px; }
+.device[data-state="ready"] .key.shock,
+.device[data-state="warning"] .key.shock { animation: armed 0.9s ease-in-out infinite; }
+
+@keyframes flash { 50% { opacity: 0.25; } }
+@keyframes armed {
+	0%, 100% { box-shadow: 0 0 0 0 rgba(255,96,40,0.0), inset 0 1px 0 rgba(255,255,255,0.35), 0 4px 0 rgba(0,0,0,0.55); }
+	50%      { box-shadow: 0 0 26px 8px rgba(255,96,40,0.65), inset 0 1px 0 rgba(255,255,255,0.35), 0 4px 0 rgba(0,0,0,0.55); }
+}
+
+/* ── Portrait: controls in a row beneath the screen ──────────────────────── */
+
+@media (orientation: portrait) {
+	.device {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr) auto;
+	}
+	.panel {
+		display: grid;
+		grid-template-columns: auto 1.4fr 1fr 1.2fr;
+		align-items: end;
+		gap: clamp(10px, 2.4vw, 22px);
+		padding: 0;
+	}
+	.key { min-height: clamp(56px, 8vh, 96px); }
+	.key.shock { min-height: clamp(64px, 9vh, 110px); }
+	.key.power { width: clamp(58px, 8vh, 88px); height: clamp(58px, 8vh, 88px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.device[data-state="ready"] .status,
+	.device[data-state="warning"] .status,
+	.device[data-state="ready"] .key.shock,
+	.device[data-state="warning"] .key.shock,
+	.link.down i { animation: none; }
+}
