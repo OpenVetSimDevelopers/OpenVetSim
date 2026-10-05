@@ -297,8 +297,13 @@ scenario_main(void)
 	scenario = (struct scenario_data*)calloc(1, sizeof(struct scenario_data));
 	initializeParameterStruct(&scenario->initParams);
 
-	simmgr_shm->eventListNextWrite = 0;	// Start processing event at the next posted event
-	simmgr_shm->eventListNextRead = 0;
+	// Start processing events at the next posted event: skip anything still
+	// unprocessed from before this scenario. The event list is a ring buffer
+	// shared with the event logger (checkEvents in VetSim.cpp), so the write
+	// index is never rewound - doing that left lastEventLogged behind it, and
+	// the logger then went all the way round the ring, writing up to 127 empty
+	// "Event: N (0)" lines into the new scenario's log.
+	simmgr_shm->eventListNextRead = simmgr_shm->eventListNextWrite;
 
 	// For display Time
 	start_time = std::time(nullptr);
@@ -1110,10 +1115,11 @@ startScene(int sceneId)
 		snprintf(s_msg, MAX_MSG_SIZE, "Scenario: Start Scene %d: %s", sceneId, current_scene->name);
 		lockAndComment(s_msg);
 		
-		// Clear Events
-		simmgr_shm->eventListNextWrite = 0;
-		simmgr_shm->eventListNextRead = 0;
-		memset(simmgr_shm->eventList, 0, sizeof(simmgr_shm->eventList));
+		// Clear Events: events posted before this scene - including the one that
+		// triggered it - cannot trigger anything in it. Skip them rather than
+		// rewinding the ring (see scenario_main) or wiping it, which would blank
+		// any event the logger has not written out yet.
+		simmgr_shm->eventListNextRead = simmgr_shm->eventListNextWrite;
 
 		processInit(&current_scene->initParams);
 		// Clear completion counts in any trigger groups
