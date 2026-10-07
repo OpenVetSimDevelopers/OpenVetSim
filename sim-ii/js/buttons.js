@@ -18,6 +18,14 @@ See gpl.html
 			buttons.setABPButton();
 			buttons.setCPRButton();
 			
+			// the tiles are role="button": Enter or Space works like a click
+			$('#sensor-bar .sensor-tile').on('keydown', function(e) {
+				if( e.key == 'Enter' || e.key == ' ' ) {
+					e.preventDefault();
+					$(this).trigger('click');
+				}
+			});
+			
 			// bind button events
 			$('#button-ekg').click(function() {
 				buttons.bindVSButton("ekg");
@@ -51,16 +59,27 @@ See gpl.html
 			
 		},
 		
+		// The sensor name for a tile's tooltip: the scenario's <control> <title>
+		// when it has one (profile.js writes it into the hidden #button-X-title),
+		// else the default in ii.php.
+		tileName: function(id) {
+			var t = $('#button-' + id + '-title').text();
+			return String(t || '').trim();
+		},
+
+		// Show a tile on or off and set its tooltip, e.g. "ECG - Disconnect ECG Leads".
+		setTile: function(id, on, actionText) {
+			var name = buttons.tileName(id);
+			$('#button-' + id)
+				.toggleClass('is-on', on == true)
+				.attr('aria-pressed', on ? 'true' : 'false')
+				.prop('title', name ? name + ' \u2013 ' + actionText : actionText);
+		},
+
 		setVSButton: function(buttonType) {
-			if(controls[buttonType].leadsConnected == false) {
-				$('#button-' + buttonType).css({
-					'background-color': buttons.disconnectColor
-					}).prop('title', controls[buttonType].disconnectHTML);
-			} else {
-				$('#button-' + buttonType).css({
-					'background-color': buttons.connectColor
-					}).prop('title', controls[buttonType].connectHTML);			
-			}
+			var on = ( controls[buttonType].leadsConnected != false );
+			buttons.setTile(buttonType, on,
+				on ? controls[buttonType].connectHTML : controls[buttonType].disconnectHTML);
 		},
 		
 		// The PA catheter is a probe like the others, but its state lives in
@@ -68,15 +87,8 @@ See gpl.html
 		// waveform channel rather than just un-blanking a value - so it needs its own
 		// pair rather than going through setVSButton / bindVSButton.
 		setPACButton: function() {
-			if(controls.pac.placed == false) {
-				$('#button-pac').css({
-					'background-color': buttons.disconnectColor
-					}).prop('title', controls.pac.disconnectHTML);
-			} else {
-				$('#button-pac').css({
-					'background-color': buttons.connectColor
-					}).prop('title', controls.pac.connectHTML);
-			}
+			var on = ( controls.pac.placed == true );
+			buttons.setTile('pac', on, on ? controls.pac.connectHTML : controls.pac.disconnectHTML);
 		},
 
 		bindPACButton: function() {
@@ -88,27 +100,19 @@ See gpl.html
 		// line can also be placed from the ABP waveform dialog; both send the same
 		// command, and this button follows whichever was used.
 		setABPButton: function() {
-			if(controls.abp.lineConnected == false) {
-				$('#button-abp').css({
-					'background-color': buttons.disconnectColor
-					}).prop('title', controls.abp.disconnectHTML);
-			} else {
-				$('#button-abp').css({
-					'background-color': buttons.connectColor
-					}).prop('title', controls.abp.connectHTML);
-			}
+			var on = ( controls.abp.lineConnected == true );
+			buttons.setTile('abp', on, on ? controls.abp.connectHTML : controls.abp.disconnectHTML);
 		},
 
 		bindABPButton: function() {
 			simmgr.sendChange({'set:cardiac:abp_line': (controls.abp.lineConnected == true) ? 0 : 1});
 		},
 
+		// Comps: grey heart when idle, red heart with hands while compressions run.
 		setCPRButton: function() {
-			if(controls.cpr.inProgress == false) {
-				$('#button-cpr').attr('src', BROWSER_IMAGES + 'empty.png');
-			} else {
-				$('#button-cpr').attr('src', BROWSER_IMAGES + 'heart.png');
-			}
+			var on = ( controls.cpr.inProgress == true );
+			$('#button-cpr').toggleClass('is-on', on)
+				.prop('title', on ? 'Chest compressions running' : 'Chest compressions');
 		},
 		
 		bindVSButton: function(buttonType) {

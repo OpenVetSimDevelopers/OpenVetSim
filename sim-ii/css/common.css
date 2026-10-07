@@ -342,7 +342,10 @@ a:hover {
 	padding: 6px 8px 8px;
 	box-sizing: border-box;
 	display: flex;
-	justify-content: space-between;
+	/* centred with an even gap, so the row looks the same with seven tiles
+	   (Advanced) or five (Simple) */
+	justify-content: center;
+	gap: 10px;
 	align-items: flex-end;
 	background: #ffffff;
 }
@@ -355,21 +358,143 @@ a:hover {
 	#sensor-bar .nvs-button {
 		position: static;
 	}
+	/* Each tile names itself, so the scenario label is kept only as the
+	   tooltip (buttons.tileName) and not shown. */
 	#sensor-bar h2.nvs-button {
-		margin: 0;
-		font-size: 13px;
-		line-height: 1.15;
-		white-space: nowrap;
+		display: none;
 	}
-	#sensor-bar img.nvs-button {
-		width: 46px;
-		height: 46px;
+	/* Patient Monitor: Simple (Simulator menu) hides the ABP and IBP2 buttons. */
+	body.monitor-simple #sensor-bar .sensor-advanced {
+		display: none;
 	}
 
 /* Pulse / Comps labels sit at the right edge of the avatar; keep each on one line. */
 #mannequin h2.nvs-button {
 	white-space: nowrap;
 }
+
+/* ---- Sensor tiles ---------------------------------------------------------
+   The sensor buttons and the Pulse / Comps indicators. Off: a pale tile with
+   grey lettering. On (.is-on, set by buttons.js): the lettering darkens and the
+   tile gains an outline and a bar in the channel's monitor colour (--ch).
+   Pulse uses .palp-light / -medium / -firm instead (controls.pulse). */
+@font-face {
+	font-family: 'OVS Condensed';		/* IBM Plex Sans Condensed Bold, OFL - fonts/OFL.txt */
+	src: url('../fonts/ibm-plex-sans-condensed-latin-700-normal.woff2') format('woff2');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+.sensor-tile {
+	--ch: #5b6470;
+	box-sizing: border-box;
+	width: 46px;
+	height: 46px;
+	border-radius: 11px;
+	background: #f8f9fa;
+	border: 1px solid #e1e4e8;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	cursor: pointer;
+	-webkit-user-select: none;
+	user-select: none;
+}
+	.sensor-tile:focus-visible {
+		outline: 2px solid #2f6fd6;
+		outline-offset: 2px;
+	}
+	.sensor-tile .tile-text {
+		font-family: 'OVS Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+		font-weight: 700;
+		font-size: 14px;
+		line-height: 1;
+		letter-spacing: 0.01em;
+		white-space: nowrap;
+		color: #a3abb5;
+	}
+	.sensor-tile .tile-text sub {
+		font-size: 0.64em;
+		line-height: 0;
+		vertical-align: -0.22em;
+	}
+	.sensor-tile .tile-bar {
+		width: 20px;
+		height: 2px;
+		border-radius: 1px;
+		background: transparent;
+	}
+	.sensor-tile.is-on {
+		background: #eef1f4;
+		border: 2px solid var(--ch);
+	}
+		.sensor-tile.is-on .tile-text {
+			color: #1f2a37;
+		}
+		.sensor-tile.is-on .tile-bar {
+			background: var(--ch);
+		}
+	/* channel colours - the trace colours of the patient monitor, darkened where
+	   needed to read on a light tile */
+	.sensor-tile.ch-ecg  { --ch: #1e9e4a; }
+	.sensor-tile.ch-spo2 { --ch: #c79a00; }
+	.sensor-tile.ch-co2  { --ch: #5b6470; }
+	.sensor-tile.ch-nibp { --ch: #d93a3f; }
+	.sensor-tile.ch-temp { --ch: #2f6fd6; }
+	.sensor-tile.ch-abp  { --ch: #d93a3f; }
+	.sensor-tile.ch-ibp2 { --ch: #1597b0; }
+	.sensor-tile.ch-cpr  { --ch: #B31B1B; }
+
+/* Pulse and Comps sit on the avatar, which is drawn at 0.8 scale: sizes here
+   are in its 500px space (50px shows as 40px). Their labels are not shown -
+   the pictures say what they are. */
+#mannequin .sensor-tile {
+	position: absolute;
+	width: 50px;
+	height: 50px;
+	border-radius: 12px;
+	gap: 3px;
+	cursor: default;
+}
+	#mannequin #button-palpate-title,
+	#mannequin #button-cpr-title {
+		display: none;
+	}
+	#mannequin .sensor-tile.is-on {
+		border-width: 2.5px;
+	}
+	#mannequin .icon-tile .tile-icon {
+		width: 36px;
+		height: 36px;
+		color: #c9ced5;
+	}
+	#mannequin .icon-tile img {
+		width: 32px;
+		height: 32px;
+		position: static;
+	}
+	#mannequin .icon-tile .cpr-running { display: none; }
+	#mannequin .icon-tile.is-on .cpr-running { display: block; }
+	#mannequin .icon-tile.is-on .cpr-idle { display: none; }
+	/* palpation pressure, as the old background colours: light yellow,
+	   medium (correct) green, firm red */
+	#button-palpate.palp-light,
+	#button-palpate.palp-medium,
+	#button-palpate.palp-firm {
+		background: #eef1f4;
+		border-width: 2.5px;
+		border-style: solid;
+	}
+	#button-palpate.palp-light  { border-color: #d4a300; }
+	#button-palpate.palp-medium { border-color: #1e9e4a; }
+	#button-palpate.palp-firm   { border-color: #d93a3f; }
+	#button-palpate.palp-light .tile-icon,
+	#button-palpate.palp-medium .tile-icon,
+	#button-palpate.palp-firm .tile-icon {
+		color: #1f2a37;
+	}
 
 #mannequin-frame {
 	width: 400px;

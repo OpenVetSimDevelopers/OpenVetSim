@@ -4,6 +4,55 @@ sim-ii: Copyright (C) 2019  VetSim, Cornell University College of Veterinary Med
 See gpl.html
 */
 	var controls = {
+		// Simulator > Patient Monitor in the app. 'simple' is the monitor as it
+		// always was - ECG, ETCO2 and SpO2 - with the ABP and IBP2 buttons hidden;
+		// 'advanced' adds those buttons, and their waveforms while a line is in.
+		// A page starts in the mode PHP put on <body> (ovsPatientMonitorMode in
+		// init.php) and follows sim-remote/ovs-config.json from then on, so a
+		// change in the menu reaches every open instructor and student display.
+		// Only the display is gated: the simulator keeps each line's state, so
+		// switching to Advanced shows a line that was placed in the meantime.
+		monitorMode: {
+			advanced: true,
+			CONFIG_URL: '/sim-remote/ovs-config.json',
+			POLL_MS: 3000,
+
+			// call after chart.init()
+			init: function() {
+				controls.monitorMode.advanced = ! document.body.classList.contains('monitor-simple');
+				controls.monitorMode.apply();
+				setTimeout(controls.monitorMode.load, controls.monitorMode.POLL_MS);
+			},
+
+			load: function() {
+				fetch(controls.monitorMode.CONFIG_URL, { cache: 'no-store' })
+					.then(function(r) { return r.ok ? r.json() : null; })
+					.then(function(cfg) {
+						if( cfg && typeof cfg.patientMonitor === 'string' ) {
+							var adv = ( cfg.patientMonitor !== 'simple' );
+							if( adv != controls.monitorMode.advanced ) {
+								controls.monitorMode.advanced = adv;
+								controls.monitorMode.apply();
+							}
+						}
+					})
+					.catch(function() { /* keep the current mode */ })
+					.then(function() {
+						setTimeout(controls.monitorMode.load, controls.monitorMode.POLL_MS);
+					});
+			},
+
+			apply: function() {
+				var adv = controls.monitorMode.advanced;
+				document.body.classList.toggle('monitor-simple', ! adv);
+				document.body.classList.toggle('monitor-advanced', adv);
+				if( typeof chart !== 'undefined' && chart.setChannelEnabled ) {
+					chart.setChannelEnabled('abp', controls.abp.lineConnected && adv);
+					chart.setChannelEnabled('pac', controls.pac.placed && adv);
+				}
+			}
+		},
+
 		controllers: {
 			ip: "",				// controller IP address
 			fwVers: "",
@@ -422,7 +471,7 @@ See gpl.html
 			},
 			
 			setPalpateColor: function() {
-				var palpateColor = 'transparent';
+				var palpateClass = '';
 				
 				var palpateValue = Math.max(
 										parseInt(controls.pulse.left_femoral), 
@@ -435,20 +484,23 @@ See gpl.html
 				if(palpateValue != this.PULSE_POSITION_LIGHT) {
 					switch(palpateValue) {
 						case this.PULSE_TOUCH_LIGHT:
-							palpateColor = 'yellow';
+							palpateClass = 'palp-light';		// yellow outline
 							break;
 						case this.PULSE_TOUCH_MEDIUM:
-							palpateColor = 'green';
+							palpateClass = 'palp-medium';		// green outline
 							break;
 						case this.PULSE_TOUCH_HEAVY:
 						case this.PULSE_TOUCH_EXCESSIVE:
-							palpateColor = 'red';
+							palpateClass = 'palp-firm';		// red outline
 							break;
 						default:
 							break;
 					}
 				}
-				$('#button-palpate').css('background-color', palpateColor);
+				// the Pulse tile: faded hand when not palpated, dark hand with an
+				// outline in the pressure colour when it is (common.css)
+				$('#button-palpate').removeClass('palp-light palp-medium palp-firm').addClass(palpateClass)
+					.prop('title', palpateClass ? 'Pulse being palpated' : 'Pulse palpation');
 				return;
 			},
 			
@@ -556,7 +608,7 @@ See gpl.html
 				}
 				controls.abp.lineConnected = on;
 				if( typeof chart !== 'undefined' && chart.setChannelEnabled ) {
-					chart.setChannelEnabled('abp', on);
+					chart.setChannelEnabled('abp', on && controls.monitorMode.advanced);
 				}
 				return true;
 			},
@@ -701,8 +753,8 @@ See gpl.html
 			labels: { cvp: 'CVP', ra: 'RA', rv: 'RV', pa: 'PA', wedge: 'PAWP' },
 
 			// Tooltips for the probe icon, matching the other sensors.
-			connectHTML: 'Remove PA Catheter',
-			disconnectHTML: 'Place PA Catheter',
+			connectHTML: 'Remove IBP2 Catheter',
+			disconnectHTML: 'Place IBP2 Catheter',
 
 			// Positions reported as a mean pressure rather than systolic/diastolic.
 			// A venous or wedge trace has no meaningful systole.
@@ -720,7 +772,7 @@ See gpl.html
 				}
 				controls.pac.placed = on;
 				if( typeof chart !== 'undefined' && chart.setChannelEnabled ) {
-					chart.setChannelEnabled('pac', on);
+					chart.setChannelEnabled('pac', on && controls.monitorMode.advanced);
 				}
 				controls.pac.displayValue();
 			},
@@ -1297,12 +1349,13 @@ console.log("ETCO2 Display Value - chart.resp.rhythmIndex: " + chart.resp.rhythm
 			},
 			
 			setCPRState: function() {
+				if( typeof buttons !== 'undefined' && buttons.setCPRButton ) {
+					buttons.setCPRButton();		// the Comps tile
+				}
 				if(controls.cpr.inProgress == false) {
 					$('a.cpr-link').html('Start Comps (c)');
-					$('#button-cpr').attr('src', BROWSER_IMAGES + 'empty.png');
 				} else {
-					$('a.cpr-link').html('Stop Comps (c)');					
-					$('#button-cpr').attr('src', BROWSER_IMAGES + 'heart.png');
+					$('a.cpr-link').html('Stop Comps (c)');
 				}
 			}
 		},

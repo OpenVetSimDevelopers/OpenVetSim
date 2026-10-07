@@ -267,6 +267,7 @@ console.log("Window name: " + window.name);
 				profile.init();
 				
 				chart.init();
+				controls.monitorMode.init();	// Simple / Advanced (Simulator menu)
 				
 				controls.heartRate.init();
 				controls.awRR.init();
@@ -353,7 +354,7 @@ console.log(controls['awRR'].increment);
 
 		</script>
 	</head>
-	<body>
+	<body class="monitor-<?= ovsPatientMonitorMode(); ?>">
 		<div id="sitewrapper">
 			<div id="admin-nav">
 				<h1>Open VetSim Instructor Interface</h1>
@@ -430,10 +431,14 @@ console.log(controls['awRR'].increment);
 			<div id="mannequin-frame" class="clearer float-left ii-border">
 			<div id="mannequin">
 				<h1>Non Vital Controls</h1>
+				<!-- Pulse and Comps are indicators placed by the scenario's <control>
+				     left/top. Pulse shows palpation pressure (controls.pulse), Comps
+				     whether compressions are running (controls.cpr). Their titles are
+				     kept for the scenario's label but not shown: see common.css. -->
 				<h2 id="button-palpate-title" class="nvs-button"></h2>
-				<img class="nvs-button" id="button-palpate" src="<?= BROWSER_IMAGES; ?>palpate.png" alt="Palpate Icon">
+				<div class="nvs-button sensor-tile icon-tile" id="button-palpate" title="Pulse palpation"><svg class="tile-icon" viewBox="-64 36 590 590" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="translate(462 0) scale(-1 1)"><path d="M125 0L148 82Q156 108 140 132L78 225Q62 250 72 278L92 322Q102 345 135 345V465A32.5 32.5 0 0 0 200 465V491A34 34 0 0 0 268 491V341A34.5 34.5 0 0 0 337 341V318A31.5 31.5 0 0 0 400 318V200Q400 175 380 160L345 130Q330 115 330 95V30"/><path d="M135 290V345"/><path d="M200 290V465"/><path d="M268 290V341"/><path d="M337 290V318"/><path d="M-20 590c40 0 50-34 90-34s50 34 90 34 50-34 90-34 50 34 90 34 50-34 90-34"/></g></svg></div>
 				<h2 id="button-cpr-title" class="nvs-button"></h2>
-				<img class="nvs-button" id="button-cpr" src="<?= BROWSER_IMAGES; ?>empty.png" alt="CPR Icon">
+				<div class="nvs-button sensor-tile icon-tile ch-cpr" id="button-cpr" title="Chest compressions"><img class="cpr-idle" src="<?= BROWSER_IMAGES; ?>comps-idle.svg" alt=""><img class="cpr-running" src="<?= BROWSER_IMAGES; ?>comps-running.svg" alt=""><span class="tile-bar"></span></div>
 				
 				<!-- PEA and Cardiac Arrest Indicators -->
 				<h2 id="indicator-pea">PEA</h2>
@@ -480,18 +485,19 @@ console.log(controls['awRR'].increment);
 			</div>
 			</div><!-- /mannequin-frame -->
 
-			<!-- Sensor row. Laid out by the stylesheet in a fixed order: a scenario's
-			     <control> entries still set each label, but their left/top positions
-			     no longer apply. The labels here are the defaults for a scenario that
-			     does not list a sensor. -->
+			<!-- Sensor row, in a fixed order. Each tile names itself and is on when
+			     it has the .is-on class (buttons.js). A scenario's <control> <title>
+			     for a sensor becomes the tile's tooltip; the <h2> holding it is not
+			     shown, and <left>/<top> no longer apply. ABP and IBP2 are hidden when
+			     Patient Monitor is set to Simple. -->
 			<div id="sensor-bar" class="ii-border">
-				<div class="sensor"><h2 id="button-ekg-title" class="nvs-button">ECG</h2><img class="nvs-button" id="button-ekg" src="<?= BROWSER_IMAGES; ?>ekg.png" alt="EKG Icon"></div>
-				<div class="sensor"><h2 id="button-SpO2-title" class="nvs-button">SpO<sub>2</sub></h2><img class="nvs-button" id="button-SpO2" src="<?= BROWSER_IMAGES; ?>spo2.png" alt="SpO2 Icon"></div>
-				<div class="sensor"><h2 id="button-Tperi-title" class="nvs-button">Temp</h2><img class="nvs-button" id="button-Tperi" src="<?= BROWSER_IMAGES; ?>Tperi.png" alt="Temperature Icon"></div>
-				<div class="sensor"><h2 id="button-pac-title" class="nvs-button">PA Cath</h2><img class="nvs-button" id="button-pac" src="<?= BROWSER_IMAGES; ?>pac.png" alt="PA Catheter Icon"></div>
-				<div class="sensor"><h2 id="button-abp-title" class="nvs-button">ABP</h2><img class="nvs-button" id="button-abp" src="<?= BROWSER_IMAGES; ?>abp.png" alt="Arterial Line Icon"></div>
-				<div class="sensor"><h2 id="button-CO2-title" class="nvs-button">ETCO<sub>2</sub></h2><img class="nvs-button" id="button-CO2" src="<?= BROWSER_IMAGES; ?>co2.png" alt="CO2 Icon"></div>
-				<div class="sensor"><h2 id="button-bpcuff-title" class="nvs-button">Cuff</h2><img class="nvs-button" id="button-bpcuff" src="<?= BROWSER_IMAGES; ?>bpcuff.png" alt="bpcuff Icon"></div>
+				<div class="sensor"><h2 id="button-ekg-title" class="nvs-button">ECG</h2><div class="nvs-button sensor-tile ch-ecg" id="button-ekg" role="button" tabindex="0"><span class="tile-text">ECG</span><span class="tile-bar"></span></div></div>
+				<div class="sensor"><h2 id="button-SpO2-title" class="nvs-button">SpO<sub>2</sub></h2><div class="nvs-button sensor-tile ch-spo2" id="button-SpO2" role="button" tabindex="0"><span class="tile-text">SpO<sub>2</sub></span><span class="tile-bar"></span></div></div>
+				<div class="sensor"><h2 id="button-CO2-title" class="nvs-button">ETCO<sub>2</sub></h2><div class="nvs-button sensor-tile ch-co2" id="button-CO2" role="button" tabindex="0"><span class="tile-text">ETCO<sub>2</sub></span><span class="tile-bar"></span></div></div>
+				<div class="sensor"><h2 id="button-bpcuff-title" class="nvs-button">Cuff</h2><div class="nvs-button sensor-tile ch-nibp" id="button-bpcuff" role="button" tabindex="0"><span class="tile-text">NIBP</span><span class="tile-bar"></span></div></div>
+				<div class="sensor"><h2 id="button-Tperi-title" class="nvs-button">Temp</h2><div class="nvs-button sensor-tile ch-temp" id="button-Tperi" role="button" tabindex="0"><span class="tile-text">T°</span><span class="tile-bar"></span></div></div>
+				<div class="sensor sensor-advanced"><h2 id="button-abp-title" class="nvs-button">ABP</h2><div class="nvs-button sensor-tile ch-abp" id="button-abp" role="button" tabindex="0"><span class="tile-text">ABP</span><span class="tile-bar"></span></div></div>
+				<div class="sensor sensor-advanced"><h2 id="button-pac-title" class="nvs-button">IBP2</h2><div class="nvs-button sensor-tile ch-ibp2" id="button-pac" role="button" tabindex="0"><span class="tile-text">IBP2</span><span class="tile-bar"></span></div></div>
 			</div>
 
 			<div id="media-col">
