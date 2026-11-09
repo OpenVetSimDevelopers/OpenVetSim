@@ -70,7 +70,9 @@
         "from": "../scenarios",
         "to": "scenarios",
         "filter": [
-          "**/*"
+          "default/**/*",
+          "healthy_dog/**/*",
+          "blank/**/*"
         ]
       }
     ],
