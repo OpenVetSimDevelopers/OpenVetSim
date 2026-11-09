@@ -76,6 +76,8 @@ See gpl.html
 			normalMinValue: 0,
 			
 			beatTimeout: 0,
+			avbTick: 0,				// 2nd-degree AV block: P waves since the last blocked one
+			atrialTimeout: 0,		// 3rd-degree AV block: P wave timer
 			
 			modalUnitsLabel: 'BPM',
 			
@@ -145,6 +147,24 @@ See gpl.html
 				} else {
 					controls.heartRate.delay = 1.0;
 				}
+
+				// Second-degree AV block on a display that times its own beats (any
+				// display not on the simulator's computer): this timer runs at the P
+				// wave rate, HR x N/(N-1), and every Nth P wave is blocked - drawn
+				// alone, with no beat. The simulator does the same for its own displays.
+				var avb2Ratio = 0;
+				if(!(simmgr.isLocalDisplay()) && (chart.ekg.rhythmIndex == 'avb2_mobitz1' || chart.ekg.rhythmIndex == 'avb2_mobitz2')) {
+					avb2Ratio = Math.max(2, chart.avb.ratio);
+					controls.heartRate.avbTick++;
+					if(controls.heartRate.avbTick >= avb2Ratio) {
+						controls.heartRate.avbTick = 0;
+						chart.startPWave();
+						clearTimeout(controls.heartRate.beatTimeout);
+						controls.heartRate.beatTimeout = setTimeout(controls.heartRate.setSynch,
+							Math.round((60 / controls.heartRate.value) * 1000 * (avb2Ratio - 1) / avb2Ratio));
+						return;
+					}
+				}
 				
 				// see if we are in a vpc cycle
 				if(chart.ekg.rhythmIndex == 'sinus' && !(simmgr.isLocalDisplay())) {
@@ -168,8 +188,34 @@ See gpl.html
 	
 				if ( ! ( simmgr.isLocalDisplay() ))
 				{
+					var nextBeatMs = Math.round((60 / controls.heartRate.value) * 1000) * controls.heartRate.delay;
+					if(avb2Ratio > 0) {
+						nextBeatMs = Math.round(nextBeatMs * (avb2Ratio - 1) / avb2Ratio);
+					}
 					clearTimeout(controls.heartRate.beatTimeout);
-					controls.heartRate.beatTimeout = setTimeout(controls.heartRate.setSynch, Math.round((60 / controls.heartRate.value) * 1000) * controls.heartRate.delay);						
+					controls.heartRate.beatTimeout = setTimeout(controls.heartRate.setSynch, nextBeatMs);						
+				}
+			},
+
+			// Third-degree AV block on a display that times its own beats: P waves
+			// at the atrial rate, independent of the ventricular beats. (On the
+			// simulator's computer the simulator's P wave count drives them.)
+			startAtrialTimer: function() {
+				if(simmgr.isLocalDisplay()) {
+					return;
+				}
+				clearTimeout(controls.heartRate.atrialTimeout);
+				var tick = function() {
+					if(chart.ekg.rhythmIndex != 'avb3' || !(chart.avb.atrialRate > 0)) {
+						controls.heartRate.atrialTimeout = 0;
+						return;
+					}
+					chart.startPWave();
+					controls.heartRate.atrialTimeout = setTimeout(tick, Math.round(60000 / chart.avb.atrialRate));
+				};
+				if(chart.avb.atrialRate > 0) {
+					// start half a beat out of step with the QRS
+					controls.heartRate.atrialTimeout = setTimeout(tick, Math.round(30000 / chart.avb.atrialRate));
 				}
 			},
 			
@@ -254,6 +300,8 @@ See gpl.html
 			vpcResponse: 'none',	// actual vpc response from simmgr {'none', '1-1', '1-2', etc...}
 			vpcFrequency: 10,
 			vfibAmplitude: 'low',
+			avbRatio: 3,			// 2nd-degree AV block: N P waves per N-1 conducted
+			atrialRate: 120,		// 3rd-degree AV block: P wave rate
 			vpcCount: 0,			// count of vpc's to be generated {0 - none, 1 - singlet, 2 - doublet, 3 - triplet}
 			
 			// array to simulate semi-random vpc
@@ -266,7 +314,7 @@ See gpl.html
 				var newECGType = $('.ecg-select').children('option:selected').attr('data-type');
 				
 				// hide all options
-				$('.control-modal-div.pea, .control-modal-div.amplitude, .control-modal-div.pulses, .control-modal-div.frequency').hide();
+				$('.control-modal-div.pea, .control-modal-div.amplitude, .control-modal-div.pulses, .control-modal-div.frequency, .control-modal-div.avb-ratio, .control-modal-div.atrial-rate').hide();
 				
 				// if pulse ECG then show PEA
 				if(newECGType == 'pulse') {
@@ -281,6 +329,15 @@ See gpl.html
 				// vfib - pulses
 				if(newECG == 'vfib') {
 					$('.control-modal-div.amplitude').show();											
+				}
+
+				// AV block: second degree has a conduction ratio, third degree an
+				// atrial rate (the heart rate below is the ventricular rate)
+				if(newECG == 'avb2_mobitz1' || newECG == 'avb2_mobitz2') {
+					$('.control-modal-div.avb-ratio').show();
+				}
+				if(newECG == 'avb3') {
+					$('.control-modal-div.atrial-rate').show();
 				}
 			},
 			

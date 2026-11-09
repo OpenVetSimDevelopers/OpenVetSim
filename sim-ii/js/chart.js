@@ -63,6 +63,121 @@ See gpl.html
 			delayPtr: 0
 		},
 
+		// AV block rhythms: avb1, avb2_mobitz1, avb2_mobitz2, avb3.
+		//
+		// The simulator sends every beat that reaches the ventricles as pulseCount,
+		// as for sinus, and every P wave that does not (a blocked P in second
+		// degree, every atrial beat in third degree) as pulseCountP.
+		//
+		//   avb1          each beat is P, a long PR, then QRS-T
+		//   avb2_mobitz2  each conducted beat is P, a normal PR, then QRS-T;
+		//                 blocked P waves are drawn alone
+		//   avb2_mobitz1  as Mobitz II, but the PR lengthens beat by beat until
+		//                 the blocked P, then starts again (Wenckebach)
+		//   avb3          each beat is a wide ventricular escape complex with no P;
+		//                 P waves are drawn at the atrial rate, over whatever the
+		//                 ventricular trace is doing, so they march through it
+		//
+		// Conducted beats are built from parts (P, PR segment, QRS-T from the
+		// sinus complex) so the PR can be set in samples. P waves without a QRS
+		// are drawn as an overlay added onto the trace (pIndex/pWave).
+		avb: {
+			// P wave, reference samples above baseline (15 ms each)
+			pShape: [0, 1, 3, 5, 6, 6, 5, 3, 1, 0],
+			baseline: 1,
+			// PR segment (end of P to start of QRS), in reference samples. A normal
+			// sinus complex has 6.
+			gaps: {
+				'avb1':         [20],
+				'avb2_mobitz2': [6],
+				// Wenckebach: the longest step comes first and the steps shrink
+				'avb2_mobitz1': [6, 16, 22, 25, 27, 28, 29]
+			},
+			variants: [],		// conducted complexes, resampled for the current rate
+			beatIndex: 0,		// Mobitz I: conducted beats since the last blocked P
+			pWave: [],			// P wave drawn alone
+			pIndex: -1,			// position in pWave; -1 when none is being drawn
+			ratio: 3,			// second degree: N P waves per N-1 conducted
+			atrialRate: 120		// third degree: P wave rate
+		},
+
+		isAvbRhythm: function(rhythm) {
+			return (typeof rhythm === 'string') && (rhythm.indexOf('avb') === 0);
+		},
+
+		// Build the AV block complexes for the current rhythm and rate.
+		updateAvbWaveforms: function(rhythm, heartRate) {
+			var avb = chart.avb;
+			var sinus = chart.ekg.rhythmRef['sinus'];
+			var qrst = sinus.slice(16);					// QRS onwards
+			var p = avb.pShape.map(function(v) { return v + avb.baseline; });
+			var ms = chart.ekg.drawInterval;
+			var rate = (heartRate > 0) ? heartRate : 60;
+
+			// how many pixels a P wave alone takes at a given P wave rate - the same
+			// squeeze a sinus complex gets at that rate
+			var pLengthAt = function(pRate) {
+				var period = 60000 / pRate / ms;
+				var scale = Math.min(1, Math.floor(period * 0.75) / sinus.length);
+				return Math.max(3, Math.round(avb.pShape.length * scale));
+			};
+
+			if(rhythm == 'avb3') {
+				// ventricular escape: sized like any other complex
+				chart.updateEkgWaveform('avb3', heartRate);
+				var atrial = (avb.atrialRate > 0) ? avb.atrialRate : 120;
+				avb.pWave = chart.resampleWaveform(avb.pShape, pLengthAt(atrial));
+				if(typeof controls !== 'undefined' && controls.heartRate.startAtrialTimer) {
+					controls.heartRate.startAtrialTimer();
+				}
+				return;
+			}
+
+			// first and second degree: one P per beat timer tick. Second degree runs
+			// the P waves faster than the set (ventricular) rate.
+			var pRate = rate;
+			if(rhythm.indexOf('avb2') === 0) {
+				var n = Math.max(2, avb.ratio);
+				pRate = rate * n / (n - 1);
+			}
+			var gaps = avb.gaps[rhythm] || [6];
+			var refs = gaps.map(function(g) {
+				var pr = [];
+				for(var i = 0; i < g; i++) { pr.push(avb.baseline); }
+				return p.concat(pr, qrst);
+			});
+			var longest = Math.max.apply(null, refs.map(function(r) { return r.length; }));
+
+			// every complex must finish before the next P wave arrives
+			var period = 60000 / pRate / ms;
+			var scale = Math.min(1, Math.floor(period * 0.8) / longest);
+			avb.variants = refs.map(function(r) {
+				return chart.resampleWaveform(r, Math.max(5, Math.round(r.length * scale)));
+			});
+			avb.pWave = chart.resampleWaveform(avb.pShape, Math.max(3, Math.round(avb.pShape.length * scale)));
+			chart.useAvbVariant(0);
+		},
+
+		// Make conducted complex k the one drawn for the next beat.
+		useAvbVariant: function(k) {
+			var v = chart.avb.variants;
+			if(!v || v.length == 0) { return; }
+			var w = v[Math.min(k, v.length - 1)];
+			chart.ekg.activeWaveform = w;
+			chart.ekg.length = w.length;
+			chart.ekg.beepValue = Math.max.apply(null, w) * -1;
+		},
+
+		// A P wave with no QRS: blocked (second degree) or atrial (third degree).
+		startPWave: function() {
+			if(!chart.isAvbRhythm(chart.ekg.rhythmIndex) || chart.ekg.rhythmIndex == 'avb1') {
+				return;
+			}
+			chart.avb.pIndex = 0;
+			// Mobitz I: the PR starts short again after the blocked beat
+			chart.avb.beatIndex = 0;
+		},
+
 		// cpr status constants
 		// delay stop in msec
 		CPR_DELAY_NONE: 0,			// no delay in progress for cpr display of HR '----' 
@@ -310,8 +425,12 @@ See gpl.html
 		// these full scales that holds the current value, drawn so that full scale
 		// reaches ETCO2_FULL_SCALE_PX above zero at the reference strip height (the
 		// same height the arterial pressure scale uses).
+		// 70 puts the 50 mmHg line a little over half way up a three-channel
+		// strip, so a normal 35-40 mmHg plateau fills about 40% of it, in
+		// proportion to a breath drawn at the capnograph's sweep (88 filled 70%
+		// and, with breaths drawn too narrow, looked like a column of boxes).
 		ETCO2_SCALE_STEPS: [50, 75, 100],
-		ETCO2_FULL_SCALE_PX: 88,
+		ETCO2_FULL_SCALE_PX: 70,
 
 		// How much of the strip each morphology uses, as a fraction of the strip's
 		// height. The plethysmograph has no calibrated units - a monitor draws it at
@@ -402,6 +521,14 @@ See gpl.html
 
 			stripLeft: 0,			// traces
 			stripWidth: 900,
+
+			// Sweep: how many seconds a trace shows across the strip, as on a
+			// clinical monitor - ECG (with the arterial, pleth and PA strips, which
+			// share its time base) at about 25 mm/s, the capnogram four times slower
+			// so several whole breaths fit. Each strip draws one sample per
+			// drawInterval and moves xStep design pixels per sample to suit.
+			ecgSweepMs: 8000,
+			co2SweepMs: 30000,
 
 			readoutLeft: 912,		// per-channel labels and numbers
 			readoutWidth: 360,		// wide enough for two sub-columns (ETCO2 + awRR)
@@ -844,6 +971,7 @@ See gpl.html
 				} else {
 					strip.xPos = strip.xOffsetLeft;
 					strip.width = chart.layout.stripWidth - strip.xOffsetLeft - strip.xOffsetRight;
+					chart.setStripStep( key );
 				}
 			}
 		},
@@ -1376,6 +1504,16 @@ See gpl.html
 			chart.ekg.rhythmRef['vpc1']     = chart.ekg.rhythm['vpc1'][0].slice();
 			chart.ekg.rhythmRef['vpc2']     = chart.ekg.rhythm['vpc2'][0].slice();
 
+			// AV block. The conducted complexes are built in updateAvbWaveforms();
+			// these entries just make the names known. avb3's escape complex is
+			// the wide VPC 1 shape, brought down to the sinus baseline and scaled
+			// a little so its deep S wave stays on the strip.
+			['avb1', 'avb2_mobitz1', 'avb2_mobitz2'].forEach(function(name) {
+				chart.ekg.rhythm[name] = [ chart.ekg.rhythm['sinus'][0].slice() ];
+			});
+			chart.ekg.rhythm['avb3'] = [ chart.ekg.rhythm['vpc1'][0].map(function(v) { return Math.round((v - 8) * 0.8) + 1; }) ];
+			chart.ekg.rhythmRef['avb3'] = chart.ekg.rhythm['avb3'][0].slice();
+
 			// Initialize active waveform to asystole (flatline at startup)
 			chart.ekg.activeWaveform = chart.ekg.rhythm['asystole'][0].slice();
 			chart.ekg.length = chart.ekg.activeWaveform.length;
@@ -1680,7 +1818,25 @@ See gpl.html
 				designWidth = $('#' + chart[stripType].id).width();
 			}
 			chart[stripType].width = designWidth - chart[stripType].xOffsetLeft - chart[stripType].xOffsetRight;
+			chart.setStripStep(stripType);
 			return;
+		},
+
+		// Horizontal step per sample, so the strip shows its sweep time (layout
+		// ecgSweepMs / co2SweepMs) whatever its width.
+		//
+		// The strips were 500 pixels wide, one pixel per sample, when the waveform
+		// timings were written. At the monitor's 900 design pixels a pixel per
+		// sample showed 13.5 s of ECG and 45 s of capnogram - every complex and
+		// breath drawn at about half its proper width.
+		setStripStep: function(stripType) {
+			var strip = chart[stripType];
+			var sweep = ( stripType == 'resp' ) ? chart.layout.co2SweepMs : chart.layout.ecgSweepMs;
+			if( !( sweep > 0 ) || !( strip.width > 0 ) || !( strip.drawInterval > 0 ) ) {
+				strip.xStep = 1;
+				return;
+			}
+			strip.xStep = strip.width / ( sweep / strip.drawInterval );
 		},
 		
 		// routine to initialize vtach 3 R on T values based on heart rate sinusoidal
@@ -1745,6 +1901,14 @@ See gpl.html
 		// scales smoothly with rate, replacing the 4-level rateIndex lookup table.
 		// complexFraction controls what fraction of the RR interval the complex occupies.
 		updateEkgWaveform: function(rhythmIndex, heartRate) {
+			// AV block complexes are built from parts (avb3's escape complex is an
+			// ordinary reference, handled below when called from there)
+			if(chart.isAvbRhythm(rhythmIndex) && !chart.avb.building) {
+				chart.avb.building = true;
+				chart.updateAvbWaveforms(rhythmIndex, heartRate);
+				chart.avb.building = false;
+				return;
+			}
 			// vtach3 is a sine wave regenerated by initVtach3() before this is called
 			if(rhythmIndex == 'vtach3') {
 				chart.ekg.activeWaveform = chart.ekg.rhythm['vtach3'][0].slice();
@@ -1819,7 +1983,12 @@ See gpl.html
 					
 					// increment pointers
 					chart.ekg.patternIndex++;				
-				} else if(chart.ekg.rhythmIndex == 'sinus' || chart.ekg.rhythmIndex == 'vtach1' || chart.ekg.rhythmIndex == 'vtach2') {
+				} else if(chart.ekg.rhythmIndex == 'sinus' || chart.ekg.rhythmIndex == 'vtach1' || chart.ekg.rhythmIndex == 'vtach2' || chart.isAvbRhythm(chart.ekg.rhythmIndex)) {
+					// Mobitz I: each conducted beat gets the next, longer PR
+					if(chart.ekg.rhythmIndex == 'avb2_mobitz1' && chart.status.cardiac.synch == true && chart.ekg.patternIndex == 0) {
+						chart.useAvbVariant(chart.avb.beatIndex);
+						chart.avb.beatIndex++;
+					}
 					// check if we are doing a vpc.  VPC synch will only get set when the vpc needs to be generated
 					if(chart.status.cardiac.vpcSynch == true && chart.ekg.patternIndex == 0 && chart.status.cardiac.synch == false) {
 						// are there vpc's to generate?
@@ -1867,6 +2036,16 @@ See gpl.html
 						
 						// increment pointers
 						chart.ekg.patternIndex++;
+					}
+
+					// AV block: a P wave with no QRS, added onto whatever is being drawn
+					if(chart.avb.pIndex >= 0) {
+						if(chart.avb.pIndex < chart.avb.pWave.length && chart.isAvbRhythm(chart.ekg.rhythmIndex)) {
+							y -= chart.avb.pWave[chart.avb.pIndex];
+							chart.avb.pIndex++;
+						} else {
+							chart.avb.pIndex = -1;
+						}
 					}
 										
 				} else if(chart.ekg.rhythmIndex == 'afib') {
@@ -1973,6 +2152,7 @@ See gpl.html
 
 			// create stroke
 			chart.ekg.ctx.lineWidth = 2;
+			chart.ekg.ctx.lineCap = 'round';	// segments overlap: no seams at fractional x
 			if ( ( profile.isVitalsMonitor == false ) || ( controls.ekg.leadsConnected == true ) )
 			{
 				chart.ekg.ctx.strokeStyle = chart.ekg.color;
@@ -1985,7 +2165,7 @@ See gpl.html
 			chart.ekg.ctx.moveTo(chart.ekg.xPos, chart.ekg.lastY);
 			
 			// increment xpos
-			chart.ekg.xPos++;
+			chart.ekg.xPos += ( chart.ekg.xStep || 1 );
 			
 			chart.ekg.ctx.lineTo(chart.ekg.xPos, y);
 			chart.ekg.ctx.stroke();
@@ -2001,9 +2181,13 @@ See gpl.html
 		},
 		
 		drawCursor: function(stripType) {
-			// Create the 'cursor' by clearing out section in front of the pixel
+			// Create the 'cursor' by clearing out section in front of the pixel.
+			// xPos is fractional when a strip steps more than a pixel per sample
+			// (see setStripStep); clearing from the next whole pixel keeps the end
+			// of the segment just drawn, which a clear from xPos itself nicks,
+			// leaving the trace beaded with gaps.
 			chart[stripType].ctx.fillStyle="black";
-			chart[stripType].ctx.clearRect(chart[stripType].xPos, 0, chart.cursorWidth, chart[stripType].height );
+			chart[stripType].ctx.clearRect(Math.ceil(chart[stripType].xPos), 0, chart.cursorWidth, chart[stripType].height );
 		},
 
 		// True when a channel's trace (and therefore its scale) should be drawn.
@@ -2076,7 +2260,9 @@ See gpl.html
 			var cfg = chart.channelFor(key).scale;
 			var st = chart.scaleStyle;
 			var lines = chart.scaleLines(cfg);
-			var x0 = Math.max( strip.xOffsetLeft, Math.floor( xStart ) );
+			// from the next whole pixel, as drawCursor clears: repainting from below
+			// a fractional xPos would paint the zero line over the trace's end
+			var x0 = Math.max( strip.xOffsetLeft, Math.ceil( xStart ) );
 			var x1 = Math.min( strip.width + 2, Math.ceil( xStart + width ) );
 			if( x1 <= x0 ) {
 				return;
@@ -2697,7 +2883,7 @@ See gpl.html
 			chart.drawStripScale('pac', chart.pac.xPos, chart.cursorWidth);
 
 			if( visible == false ) {
-				chart.pac.xPos++;
+				chart.pac.xPos += ( chart.pac.xStep || 1 );
 				if((chart.pac.xPos + chart.pac.xOffsetRight) > chart.pac.width) {
 					chart.pac.xPos = chart.pac.xOffsetLeft;
 				}
@@ -2750,11 +2936,12 @@ See gpl.html
 			if( y > chart.pac.height - 1 ) { y = chart.pac.height - 1; }
 
 			chart.pac.ctx.lineWidth = 2;
+			chart.pac.ctx.lineCap = 'round';	// segments overlap: no seams at fractional x
 			chart.pac.ctx.strokeStyle = chart.pac.color;
 			chart.pac.ctx.beginPath();
 			chart.pac.ctx.moveTo(chart.pac.xPos, chart.pac.lastDisplayedY);
 
-			chart.pac.xPos++;
+			chart.pac.xPos += ( chart.pac.xStep || 1 );
 
 			chart.pac.ctx.lineTo(chart.pac.xPos, y);
 			chart.pac.ctx.stroke();
@@ -2785,7 +2972,7 @@ See gpl.html
 			chart.drawCursor('pleth');
 
 			if( visible == false ) {
-				chart.pleth.xPos++;
+				chart.pleth.xPos += ( chart.pleth.xStep || 1 );
 				if((chart.pleth.xPos + chart.pleth.xOffsetRight) > chart.pleth.width) {
 					chart.pleth.xPos = chart.pleth.xOffsetLeft;
 				}
@@ -2853,11 +3040,12 @@ See gpl.html
 			if( y > chart.pleth.height - 1 ) { y = chart.pleth.height - 1; }
 
 			chart.pleth.ctx.lineWidth = 2;
+			chart.pleth.ctx.lineCap = 'round';	// segments overlap: no seams at fractional x
 			chart.pleth.ctx.strokeStyle = chart.pleth.color;
 			chart.pleth.ctx.beginPath();
 			chart.pleth.ctx.moveTo(chart.pleth.xPos, chart.pleth.lastDisplayedY);
 
-			chart.pleth.xPos++;
+			chart.pleth.xPos += ( chart.pleth.xStep || 1 );
 
 			chart.pleth.ctx.lineTo(chart.pleth.xPos, y);
 			chart.pleth.ctx.stroke();
@@ -2905,7 +3093,7 @@ See gpl.html
 			chart.drawStripScale('abp', chart.abp.xPos, chart.cursorWidth);
 
 			if( visible == false ) {
-				chart.abp.xPos++;
+				chart.abp.xPos += ( chart.abp.xStep || 1 );
 				if((chart.abp.xPos + chart.abp.xOffsetRight) > chart.abp.width) {
 					chart.abp.xPos = chart.abp.xOffsetLeft;
 				}
@@ -2979,11 +3167,12 @@ See gpl.html
 			if( y > chart.abp.height - 1 ) { y = chart.abp.height - 1; }
 
 			chart.abp.ctx.lineWidth = 2;
+			chart.abp.ctx.lineCap = 'round';	// segments overlap: no seams at fractional x
 			chart.abp.ctx.strokeStyle = chart.abp.color;
 			chart.abp.ctx.beginPath();
 			chart.abp.ctx.moveTo(chart.abp.xPos, chart.abp.lastDisplayedY);
 
-			chart.abp.xPos++;
+			chart.abp.xPos += ( chart.abp.xStep || 1 );
 
 			chart.abp.ctx.lineTo(chart.abp.xPos, y);
 			chart.abp.ctx.stroke();
@@ -3289,6 +3478,7 @@ See gpl.html
 			y += chart.resp.yOffset + chart.resp.yDisplayOffset;
 			// create stroke
 			chart.resp.ctx.lineWidth = 2;
+			chart.resp.ctx.lineCap = 'round';	// segments overlap: no seams at fractional x
 			if ( ( profile.isVitalsMonitor == false ) || ( controls.CO2.leadsConnected == true ) )
 			{
 				chart.resp.ctx.strokeStyle = chart.resp.color;
@@ -3301,7 +3491,7 @@ See gpl.html
 			chart.resp.ctx.moveTo(chart.resp.xPos, chart.resp.lastDisplayedY);
 			
 			// increment xpos
-			chart.resp.xPos++;
+			chart.resp.xPos += ( chart.resp.xStep || 1 );
 			
 			chart.resp.ctx.lineTo(chart.resp.xPos, y);
 			chart.resp.ctx.stroke();

@@ -103,6 +103,16 @@ if(WIN32)
         $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:/SUBSYSTEM:WINDOWS>
         $<$<CONFIG:Debug>:/SUBSYSTEM:CONSOLE>
     )
+    # Release builds also write WinVetSim.pdb (debug symbols) beside the exe,
+    # so a hang or crash dump taken on a classroom PC can be read back to
+    # source lines. Optimisation is unchanged. Keep the .pdb from each build
+    # you release: a dump can only be read with the .pdb from the same build.
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/Zi>)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Release>:/DEBUG>
+        $<$<CONFIG:Release>:/OPT:REF>
+        $<$<CONFIG:Release>:/OPT:ICF>
+    )
 elseif(APPLE)
     # macOS: pthreads are part of libSystem; filesystem is in libc++
     target_link_libraries(${PROJECT_NAME} PRIVATE

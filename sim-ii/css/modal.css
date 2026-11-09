@@ -130,6 +130,11 @@ See gpl.html
 			.control-modal-div.heart-rhythm.ecg {
 				width: 200px;
 			}
+				/* keep the list inside its column: sized to its longest name, it
+				   would otherwise run under the PEA and Arrest boxes beside it */
+				.control-modal-div.heart-rhythm.ecg select {
+					max-width: 190px;
+				}
 			.control-modal-div.heart-rhythm.pulses {
 				width: 125px;
 			}

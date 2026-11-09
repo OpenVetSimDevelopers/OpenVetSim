@@ -40,6 +40,14 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	$currentPulseFrequency = dbClass::valuesFromPost('currentPulseFrequency');
 	$currentPEA = dbClass::valuesFromPost('PEA');
 	$currentArrest = dbClass::valuesFromPost('arrest');
+	$currentAvbRatio = (int)dbClass::valuesFromPost('currentAvbRatio');
+	$currentAtrialRate = (int)dbClass::valuesFromPost('currentAtrialRate');
+	if($currentAvbRatio < 2) {
+		$currentAvbRatio = 3;
+	}
+	if($currentAtrialRate <= 0) {
+		$currentAtrialRate = 120;
+	}
 	
 	// create PEA value
 	if($currentPEA == 'true') {
@@ -92,6 +100,16 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 			<select class="frequency-select modal-select">
 				' . controls::getPulseFrequencyDropDown($currentPulseFrequency) . '
 			</select>			
+		</div>
+		<div class="control-modal-div heart-rhythm avb-ratio clearer">
+			<p class="modal-section-title">P waves : QRS</p>
+			<select class="avb-ratio-select modal-select">
+				' . controls::getAvbRatioDropDown($currentAvbRatio) . '
+			</select>
+		</div>
+		<div class="control-modal-div heart-rhythm atrial-rate clearer">
+			<p class="modal-section-title">Atrial (P wave) rate, BPM</p>
+			<input type="number" class="atrial-rate-input modal-select" min="20" max="300" step="1" value="' . $currentAtrialRate . '">
 		</div>
 		
 		

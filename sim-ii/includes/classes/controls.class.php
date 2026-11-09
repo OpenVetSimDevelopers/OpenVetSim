@@ -40,6 +40,10 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 		private static $ecgList = array(
 			array('value' => 'asystole', 'type' => 'no-pulse', 'name' => 'Asystole'),
 			array('value' => 'afib', 'type' => 'pulse', 'name' => 'Atrial Fibrillation'),
+			array('value' => 'avb1', 'type' => 'pulse', 'name' => 'AV Block 1&deg;'),
+			array('value' => 'avb2_mobitz1', 'type' => 'pulse', 'name' => 'AV Block 2&deg; Mobitz I'),
+			array('value' => 'avb2_mobitz2', 'type' => 'pulse', 'name' => 'AV Block 2&deg; Mobitz II'),
+			array('value' => 'avb3', 'type' => 'pulse', 'name' => 'AV Block 3&deg;'),
 			array('value' => 'vtach3', 'type' => 'pulse', 'name' => 'R on T'),
 			array('value' => 'sinus', 'type' => 'pulse', 'name' => 'Sinus Rhythm'),
 			array('value' => 'vfib', 'type' => 'no-pulse', 'name' => 'Ventricular Fibrillation'),
@@ -66,6 +70,16 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 			array('value' => 'high', 'name' => 'High')
 		);				
 		
+		// Second-degree AV block conduction ratio: N P waves per N-1 conducted beats
+		static public function getAvbRatioDropDown($currentRatio) {
+			$content = '';
+			for($n = 2; $n <= 6; $n++) {
+				$selectContent = ((int)$currentRatio == $n) ? ' selected="selected"' : '';
+				$content .= '<option value="' . $n . '"' . $selectContent . '>' . $n . ':' . ($n - 1) . '</option>';
+			}
+			return $content;
+		}
+
 		static public function getECGDropDown($currentECG) {
 /*
 			$pulseContent = '

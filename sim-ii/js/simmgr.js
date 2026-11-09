@@ -21,6 +21,7 @@ var simmgr = {
 	breathCount : 0,
 	pulseCount : 0,
 	pulseCountVpc: 0,
+	pulseCountP: 0,		// AV block: P waves with no QRS
 	quickInterval : 40,
 	statusInterval : 500,
 	longStatusInterval : 500,
@@ -122,6 +123,8 @@ var simmgr = {
 						// kick off vpc cycle...always will happen for local display
 						controls.heartRate.isVPCCycle();
 					}
+
+					simmgr.checkPWave(response.cardiac);
 				}
 				/******** defib exit ************/
 				// Keyed on the shock flag rather than on the artifact still being on
@@ -160,6 +163,36 @@ var simmgr = {
 		});			
 	},
 	
+	// AV block: a P wave with no QRS (blocked, or a third-degree atrial beat)
+	checkPWave : function(cardiac) {
+		if ( typeof(cardiac.pulseCountP) != "undefined" && cardiac.pulseCountP != simmgr.pulseCountP )
+		{
+			simmgr.pulseCountP = cardiac.pulseCountP;
+			chart.startPWave();
+		}
+	},
+
+	// AV block: second-degree ratio and third-degree atrial rate
+	checkAvbSettings : function(cardiac) {
+		var changed = false;
+		if ( typeof(cardiac.avb_ratio) != "undefined" && parseInt(cardiac.avb_ratio) != chart.avb.ratio )
+		{
+			chart.avb.ratio = parseInt(cardiac.avb_ratio);
+			controls.heartRhythm.avbRatio = chart.avb.ratio;
+			changed = true;
+		}
+		if ( typeof(cardiac.atrial_rate) != "undefined" && parseInt(cardiac.atrial_rate) != chart.avb.atrialRate )
+		{
+			chart.avb.atrialRate = parseInt(cardiac.atrial_rate);
+			controls.heartRhythm.atrialRate = chart.avb.atrialRate;
+			changed = true;
+		}
+		if ( changed && chart.isAvbRhythm(chart.ekg.rhythmIndex) && controls.cpr.inProgress == false )
+		{
+			chart.updateEkgWaveform(chart.ekg.rhythmIndex, chart.heartRate);
+		}
+	},
+
 	getStatus : function () {
 		if ( simmgr.running < 1 )
 		{
@@ -196,6 +229,7 @@ var simmgr = {
 						simmgr.pulseCount = response.cardiac.pulseCount;
 						controls.heartRate.setSynch();
 					}
+					simmgr.checkPWave(response.cardiac);
 				}
 								
 				/************ cardiac **************/
@@ -455,6 +489,10 @@ var simmgr = {
 					}
 					
 					
+					/***** AV block settings *****/
+					// read before the rhythm so a change to both builds the right complexes
+					simmgr.checkAvbSettings(response.cardiac);
+
 					/***** heart rhythm *****/
 					// heart ecg pattern selection
 					if(typeof(response.cardiac.rhythm) != "undefined" && controls.heartRhythm.currentRhythm != response.cardiac.rhythm) {

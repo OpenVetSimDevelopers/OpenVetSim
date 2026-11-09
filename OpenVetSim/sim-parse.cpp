@@ -73,6 +73,15 @@ cardiac_parse(const char* elem, const char* value, struct cardiac* card)
 	{
 		card->pr_interval = atoi(value);
 	}
+	else if (strcmp(elem, ("avb_ratio")) == 0)
+	{
+		// 2nd-degree AV block ratio, written "3:2" or just "3"
+		card->avb_ratio = atoi(value);
+	}
+	else if (strcmp(elem, ("atrial_rate")) == 0)
+	{
+		card->atrial_rate = atoi(value);
+	}
 	else if (strcmp(elem, ("qrs_interval")) == 0)
 	{
 		card->qrs_interval = atoi(value);

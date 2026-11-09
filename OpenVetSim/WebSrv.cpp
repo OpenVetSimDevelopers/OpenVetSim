@@ -90,6 +90,29 @@ stopPHPServer(void)
 // ----------------------------------------------------------------
 char phpPath[FILENAME_MAX] = { 0, };
 
+// Settings passed to every PHP server we start.
+//   session.upload_progress.enabled=0  The session upload-progress feature is
+//       the route CVE-2026-109619 uses, and CVE-2026-115560 (Oct 2026, not yet
+//       fixed in a release) is in the same code. OpenVetSim never uses it, so
+//       it is switched off rather than left as attack surface.
+//   expose_php=0  Don't advertise the PHP version in every response header.
+// These harden PHP; they are not a substitute for a fixed release (see
+// scripts/download-php.sh and download-php.ps1).
+#define PHP_HARDEN_OPTS "-d session.upload_progress.enabled=0 -d expose_php=0"
+
+// A PHP found outside the bundle may be any age - old WinVetSim installs
+// carry PHP 8.0, which has no security fixes at all. Say so in the log.
+static void
+warnUnbundledPhp(const char* dir)
+{
+	char msg[FILENAME_MAX + 200];
+	sprintf_s(msg, sizeof(msg),
+		"WARNING: using PHP from %s, not the copy bundled with OpenVetSim. "
+		"It may be an old release with known security flaws.", dir);
+	printf("%s\n", msg);
+	log_message("", msg);
+}
+
 int
 findPhpPath(void)
 {
@@ -138,6 +161,7 @@ findPhpPath(void)
 		if (hasExe(dir, phpExe))
 		{
 			sprintf_s(phpPath, sizeof(phpPath), "%s", dir.string().c_str());
+			warnUnbundledPhp(phpPath);
 			return 1;
 		}
 	}
@@ -156,6 +180,7 @@ findPhpPath(void)
 		if (hasExe(dir, phpExe))
 		{
 			sprintf_s(phpPath, sizeof(phpPath), "%s", dir.string().c_str());
+			warnUnbundledPhp(phpPath);
 			return 1;
 		}
 	}
@@ -226,7 +251,7 @@ startPHPServer(void)
 		PROCESS_INFORMATION pi = {};
 		char phpCmd[4096];
 		sprintf_s(phpCmd, sizeof(phpCmd),
-			"\"%s\\php.exe\" -S %s:%d sim-ii/router.php",
+			"\"%s\\php.exe\" " PHP_HARDEN_OPTS " -S %s:%d sim-ii/router.php",
 			phpPath, PHP_SERVER_ADDR, PHP_SERVER_PORT);
 
 		if (CreateProcessA(nullptr, phpCmd, nullptr, nullptr,
@@ -247,7 +272,7 @@ startPHPServer(void)
 #else
 	// POSIX: launch as background process, redirect output to a log file.
 	sprintf_s(commandLine, sizeof(commandLine),
-		"cd \"%s\" && \"%s/php\" -S %s:%d sim-ii/router.php >simlogs/php.log 2>&1 &",
+		"cd \"%s\" && \"%s/php\" " PHP_HARDEN_OPTS " -S %s:%d sim-ii/router.php >simlogs/php.log 2>&1 &",
 		localConfig.html_path, phpPath,
 		PHP_SERVER_ADDR, PHP_SERVER_PORT);
 #endif

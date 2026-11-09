@@ -121,6 +121,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 				document.cookie = "userID="+userID+"; path=/";
 
 				chart.init();
+				controls.monitorMode.init();	// Simple / Advanced (Simulator menu)
 				controls.heartRate.init();
 				controls.awRR.init();
 				controls.SpO2.init();
@@ -226,7 +227,7 @@ console.log('telesim.imageNext[1]: ' + telesim.imageNext[1]);
 	
 </head>
 
-<body class="vs-fullscreen">
+<body class="vs-fullscreen monitor-<?= ovsPatientMonitorMode(); ?>">
 			<div id="vsm-frame" data-fit="viewport">
 			<div id="vsm">
 				<h1><span id="startStopButton">VS</span> Monitor</h1>

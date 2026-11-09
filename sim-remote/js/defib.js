@@ -31,7 +31,7 @@ var defib = {
 	MESSAGE_MS: 3500,			// how long a one-off status message stays up
 	BOOT_MS: 1400,				// power-on self test
 	POLL_MS: 500,				// simulator status poll, as sim-remote uses
-	CONFIG_MS: 3000,			// display-mode check (defib-config.json)
+	CONFIG_MS: 3000,			// display-mode check (ovs-config.json)
 	MONITOR_RETRY_MS: 15000,	// wait before retrying an unreachable monitor
 
 	// ---- energy -------------------------------------------------------------
@@ -50,7 +50,7 @@ var defib = {
 	wakeLock: null,
 
 	// display mode - set from the app's Simulator > Defibrillator Display menu
-	// through sim-remote/defib-config.json (see loadConfig)
+	// through sim-remote/ovs-config.json (see loadConfig)
 	display: 'ecg',				// 'ecg' = ECG only | 'monitor' = full student monitor
 	phpPort: 8081,				// where the student monitor page is served
 	monitorFrame: null,			// the embedded student monitor, while shown
@@ -77,6 +77,9 @@ var defib = {
 		defib.bind('btn-charge', defib.charge);
 		defib.bind('btn-shock', defib.shock);
 
+		// keys from the paddle and breath-sensor circuit (a USB keyboard to the tablet)
+		document.addEventListener('keydown', defib.onKey);
+
 		document.addEventListener('visibilitychange', function() {
 			if (document.visibilityState === 'visible' && defib.isOn()) {
 				defib.requestWakeLock();
@@ -99,6 +102,33 @@ var defib = {
 		el.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 	},
 
+	// Keys sent by the paddle and breath-sensor circuit, which appears to the
+	// tablet as a USB keyboard:
+	//   d   the paddles' shock buttons - the same as tapping SHOCK, so it does
+	//       nothing unless the defibrillator is charged
+	//   b   a positive-pressure breath - one manual breath, the same as the
+	//       instructor's Breath control or 'b' hotkey. Sent whether or not the
+	//       defibrillator is on: the breath sensor isn't part of it.
+	// A held key's auto-repeat is ignored, and so is a second 'b' within
+	// BREATH_GAP_MS, so one breath is never counted twice.
+	BREATH_GAP_MS: 400,
+	lastBreathAt: 0,
+
+	onKey: function(e) {
+		if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) { return; }
+		var k = (e.key || '').toLowerCase();
+		if (k === 'd') {
+			e.preventDefault();
+			defib.shock();
+		} else if (k === 'b') {
+			e.preventDefault();
+			var now = Date.now();
+			if (now - defib.lastBreathAt < defib.BREATH_GAP_MS) { return; }
+			defib.lastBreathAt = now;
+			defib.send({ 'set:respiration:manual_breath': 1 });
+		}
+	},
+
 	// The ECG strip: the patient monitor's chart.js, laid out on a design canvas
 	// sized for this screen rather than the monitor's 1280x720 one.
 	initEcg: function() {
@@ -111,6 +141,7 @@ var defib = {
 		chart.layout.gap = 0;
 		chart.layout.stripLeft = 0;
 		chart.layout.stripWidth = 600;
+		chart.layout.ecgSweepMs = 9000;	// one pixel per sample on this 600 px strip
 		chart.layout.readoutLeft = 600;
 		chart.layout.readoutWidth = 0;
 		chart.layout.bottomTop = 300;
@@ -337,7 +368,7 @@ var defib = {
 	// =========================================================================
 	// Display mode: ECG only, or the full student monitor
 	//
-	// The app writes sim-remote/defib-config.json when the simulator starts and
+	// The app writes sim-remote/ovs-config.json when the simulator starts and
 	// whenever the menu setting changes; it is re-read every few seconds so a
 	// tablet that is already connected follows the change. No file (an older
 	// app, or the page opened some other way) means ECG only.
@@ -349,11 +380,11 @@ var defib = {
 	// running underneath, so switching back is instant.
 	// =========================================================================
 	loadConfig: function() {
-		fetch('defib-config.json', { cache: 'no-store' })
+		fetch('ovs-config.json', { cache: 'no-store' })
 			.then(function(r) { return r.ok ? r.json() : null; })
 			.then(function(cfg) {
 				cfg = cfg || {};
-				var mode = (cfg.display === 'monitor') ? 'monitor' : 'ecg';
+				var mode = (cfg.defibDisplay === 'monitor') ? 'monitor' : 'ecg';
 				var port = parseInt(cfg.phpPort, 10);
 				if (port > 0 && port !== defib.phpPort) {
 					defib.phpPort = port;
@@ -530,6 +561,20 @@ var defib = {
 				controls.heartRate.displayValue();
 			}
 			document.getElementById('device').classList.toggle('no-ecg', !controls.ekg.leadsConnected);
+		}
+
+		// ---- AV block settings (simmgr.checkAvbSettings), read before the rhythm
+		var avbChanged = false;
+		if (typeof c.avb_ratio !== 'undefined' && parseInt(c.avb_ratio) != chart.avb.ratio) {
+			chart.avb.ratio = parseInt(c.avb_ratio);
+			avbChanged = true;
+		}
+		if (typeof c.atrial_rate !== 'undefined' && parseInt(c.atrial_rate) != chart.avb.atrialRate) {
+			chart.avb.atrialRate = parseInt(c.atrial_rate);
+			avbChanged = true;
+		}
+		if (avbChanged && chart.isAvbRhythm(chart.ekg.rhythmIndex) && controls.cpr.inProgress == false) {
+			chart.updateEkgWaveform(chart.ekg.rhythmIndex, chart.heartRate);
 		}
 
 		// ---- rhythm

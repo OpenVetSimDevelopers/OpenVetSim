@@ -124,6 +124,8 @@ See gpl.html
 						currentPulseFrequency: controls.heartRhythm.vpcFrequency, 
 						PEA: controls.heartRhythm.pea,
 						arrest: controls.heartRhythm.arrest,
+						currentAvbRatio: controls.heartRhythm.avbRatio,
+						currentAtrialRate: controls.heartRhythm.atrialRate,
 				},
 				dataType: 'json',
 				success: function(response) {
@@ -193,6 +195,8 @@ See gpl.html
 												'set:cardiac:arrest': ($('input#arrest').is(':checked') == true) ? 1 : 0,
 												'set:cardiac:vpc_freq': $('select.frequency-select option:selected').val(),
 												'set:cardiac:vfib_amplitude': $('select.amplitude-select option:selected').val(),
+												'set:cardiac:avb_ratio': $('select.avb-ratio-select option:selected').val(),
+												'set:cardiac:atrial_rate': Math.max(20, Math.min(300, parseInt($('input.atrial-rate-input').val()) || 120)),
 												'set:cardiac:rate': $('.strip-value.new').val()												
 											});
 							

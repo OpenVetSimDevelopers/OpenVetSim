@@ -62,7 +62,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	if($wedgeMean <= 0) { $wedgeMean = 9;  }
 
 	$content = '
-		<h1 id="modal-title">PA Catheter</h1>
+		<h1 id="modal-title">IBP2 Catheter</h1>
 
 		<hr class="modal-divider clearer" />
 		<div class="control-modal-div clearer modal-block-auto">

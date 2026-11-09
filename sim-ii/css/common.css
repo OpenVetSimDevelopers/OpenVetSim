@@ -475,6 +475,17 @@ a:hover {
 		height: 32px;
 		position: static;
 	}
+	/* Pinned into the avatar's top-right corner with one even margin - top,
+	   right and between - of 12.5px here, which shows as 10px, the gap in the
+	   sensor row below. This overrides the scenario's <top>/<left> for these
+	   two (TeleSim still uses its own positions). */
+	#mannequin:not(.tele-sim) #button-cpr,
+	#mannequin:not(.tele-sim) #button-palpate {
+		top: 12.5px !important;
+		left: auto !important;
+	}
+	#mannequin:not(.tele-sim) #button-cpr     { right: 12.5px; }
+	#mannequin:not(.tele-sim) #button-palpate { right: 75px; }
 	#mannequin .icon-tile .cpr-running { display: none; }
 	#mannequin .icon-tile.is-on .cpr-running { display: block; }
 	#mannequin .icon-tile.is-on .cpr-idle { display: none; }

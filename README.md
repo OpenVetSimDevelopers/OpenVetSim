@@ -78,6 +78,10 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 This places the binary at `OpenVetSim/build/bin/PHP8.0/php` (macOS) or `PHP8.0\php.exe` (Windows). The `.gitignore` excludes it from version control.
 
+Both scripts refuse anything older than **PHP 8.3.36 / 8.4.27** (21 October 2026), the releases that fix the critical remote-code-execution flaws CVE-2026-109618 and CVE-2026-109619, and they check the downloaded binary's own version before replacing the old one. When a later PHP security release comes out, raise the minimums in `min_patch()` in `download-php.sh` and `MinPatch` in `download-php.ps1`, re-run them and rebuild. Both platforms prefer PHP 8.3 and fall back to a fixed 8.4 (or, on the Mac, 8.5) only if no fixed 8.3 build is published. On the Mac the script reads the static-php CDN's file list (its `common` collection, then `bulk`) rather than guessing file names, and if nothing qualifies it prints what the CDN does offer. The CDN can lag php.net by weeks; when it does, `scripts/build-php-mac.sh` builds the fixed release from php.net's source instead (Xcode Command Line Tools and, on Apple silicon, Rosetta 2 needed; 5-15 minutes). It verifies the source against php.net's checksum, links only libraries that ship with macOS, and installs the universal binary in the same place. The folder is still called `PHP8.0` for historical reasons; the name has nothing to do with the version inside it.
+
+The engine also starts PHP with `session.upload_progress.enabled=0` and `expose_php=0` (see `PHP_HARDEN_OPTS` in `OpenVetSim/WebSrv.cpp`), and logs a warning in `simlogs/vetsim.log` if it has to fall back to a PHP that isn't the bundled one.
+
 ### 4 — Package a distributable
 
 ```bash

@@ -118,6 +118,40 @@ int vpcFrequencyArray[VPC_ARRAY_LEN];
 int vpcFrequencyIndex = 0;
 int vpcType = 0;
 int afibActive = 0;
+
+/* AV block (rhythms avb1, avb2_mobitz1, avb2_mobitz2, avb3)
+ *
+ *	avbMode 1	First degree. Timing is normal sinus; only the drawn PR differs.
+ *	avbMode 2	Second degree, Mobitz I or II. The beat timer runs at the
+ *				atrial (P wave) rate, HR x N/(N-1) for an N:(N-1) ratio, and
+ *				every Nth P wave is blocked: it raises pulseCountP (a P wave
+ *				with no QRS and no pulse) instead of pulseCount. The conducted
+ *				beats average the set heart rate. Mobitz I and II differ only
+ *				in the PR intervals the monitor draws.
+ *	avbMode 3	Third degree. The beat timer runs the ventricular escape at the
+ *				set heart rate; a separate atrial timer raises pulseCountP at
+ *				the atrial rate, independently.
+ *
+ * VPCs are not injected in any AV block rhythm.
+ */
+int avbMode = 0;
+int avbRatio = 3;			// N P waves per N-1 conducted beats (2 = 2:1, 3 = 3:2 ...)
+int avbBeatIndex = 0;		// position in the N-beat cycle
+int currentAtrialRate = 0;	// third degree only; 0 = atrial timer off
+ULONGLONG nextAtrialTime = 0;
+ULONGLONG atrialInterval = 0;
+
+static int
+avbModeFor(const char* rhythm)
+{
+	if (strcmp(rhythm, "avb1") == 0) return 1;
+	if (strncmp(rhythm, "avb2", 4) == 0) return 2;
+	if (strcmp(rhythm, "avb3") == 0) return 3;
+	return 0;
+}
+
+// VPC injection applies only outside the AV block rhythms
+#define VPC_ACTIVE	((vpcType > 0) && (avbMode == 0))
 #define IS_CARDIAC	1
 #define NOT_CARDIAC	0
 
@@ -271,7 +305,24 @@ pulse_beat_handler(void)
 	pulseSema.lock();
 	if (currentPulseRate > 0)
 	{
-		if ((vpcType > 0) || (afibActive))
+		if (avbMode == 2)
+		{
+			// Second degree: this timer is the atrial rate. Every avbRatio-th
+			// P wave is blocked - drawn as a P wave alone, with no pulse.
+			avbBeatIndex++;
+			if (avbBeatIndex >= avbRatio)
+			{
+				avbBeatIndex = 0;
+				simmgr_shm->status.cardiac.pulseCountP++;
+			}
+			else
+			{
+				simmgr_shm->status.cardiac.pulseCount++;
+				hrLogBeat();
+				setPulseState(2);
+			}
+		}
+		else if (VPC_ACTIVE || (afibActive))
 		{
 			if (beatPhase-- <= 0)
 			{
@@ -316,7 +367,7 @@ pulse_beat_handler(void)
 						// Range 3-15 = 40% to 160% of standard interval around mean.
 						beatPhase = 3 + (rand() % 13);
 					}
-					else if ((vpcType > 0) && (currentVpcFreq > 0))
+					else if (VPC_ACTIVE && (currentVpcFreq > 0))
 					{
 						vpcFrequencyIndex++;
 						if (!(vpcFrequencyIndex < VPC_ARRAY_LEN))
@@ -349,6 +400,16 @@ pulse_beat_handler(void)
 	}
 	pulseSema.unlock();
 }
+// Third degree AV block: an atrial beat - a P wave with no QRS and no pulse.
+static void
+atrial_beat_handler(void)
+{
+	if (avbMode == 3)
+	{
+		simmgr_shm->status.cardiac.pulseCountP++;
+	}
+}
+
 static void
 breath_beat_handler(void)
 {
@@ -445,6 +506,21 @@ getWaitTimeMsec(int rate, int isCardiac, int isFib)
  * ASSUMPTIONS:
  *		Called with pulseSema or breathSema held
 */
+// Set the cardiac beat timer to an interval in msec.
+void
+resetTimerMsec(ULONGLONG wait_time_msec)
+{
+	ULONGLONG remaining;
+	ULONGLONG now = sim_monotonic_msec();
+
+	pulseInterval = wait_time_msec;
+	remaining = nextPulseTime - now;
+	if (remaining > (now + pulseInterval))
+	{
+		nextPulseTime = now + wait_time_msec;
+	}
+}
+
 void
 resetTimer(int rate, int isCardiac, int isFib)
 {
@@ -457,13 +533,7 @@ resetTimer(int rate, int isCardiac, int isFib)
 	//printf("Set Timer: Rate %d sec_per_beat %f %llu\n", rate, sec_per_beat, wait_time_msec);
 	if (isCardiac)
 	{
-		pulseInterval = wait_time_msec;
-		remaining = nextPulseTime - now;
-		if (remaining > (now + pulseInterval))
-		{
-			nextPulseTime = now + wait_time_msec;
-		}
-		
+		resetTimerMsec(wait_time_msec);
 	}
 	else
 	{
@@ -502,7 +572,14 @@ set_pulse_rate(int bpm)
 	{
 		bpm = 60;
 	}
-	if ((vpcType > 0) || (afibActive))
+	if (avbMode == 2)
+	{
+		// Second degree: run at the atrial rate, HR x N/(N-1), so that the
+		// N-1 conducted beats in every N average the set heart rate.
+		ULONGLONG ms = (ULONGLONG)((60000.0 * (avbRatio - 1)) / ((double)bpm * avbRatio));
+		resetTimerMsec(ms);
+	}
+	else if (VPC_ACTIVE || (afibActive))
 	{
 		resetTimer(bpm, IS_CARDIAC, 1 );
 	}
@@ -612,6 +689,7 @@ pulseTask(void )
 	pulseSema.unlock();
 	simmgr_shm->status.cardiac.pulseCount = 0;
 	simmgr_shm->status.cardiac.pulseCountVpc = 0;
+	simmgr_shm->status.cardiac.pulseCountP = 0;
 
 	currentBreathRate = simmgr_shm->status.respiration.rate;
 	breathSema.lock();
@@ -1205,6 +1283,17 @@ pulseTimer(void)
 			}
 		}
 		now = sim_monotonic_msec();
+		if (atrialInterval > 0 && nextAtrialTime <= now)
+		{
+			atrial_beat_handler();
+			nextAtrialTime += atrialInterval;
+			now2 = sim_monotonic_msec();
+			if (nextAtrialTime <= (now2 + 1))
+			{
+				nextAtrialTime = now2 + atrialInterval;
+			}
+		}
+		now = sim_monotonic_msec();
 		if (nextBreathTime <= now)
 		{
 			breath_beat_handler();
@@ -1316,9 +1405,13 @@ pulseBroadcastLoop(void)
 				long long expected = (long long)pulseInterval;
 				// pulseTimer runs a 10-phase counter for VPC/afib, so a delivered
 				// beat spans 10 intervals in those modes.
-				if ((vpcType > 0) || (afibActive))
+				if (VPC_ACTIVE || (afibActive))
 				{
 					expected *= 10;
+				}
+				else if (avbMode == 2)
+				{
+					expected = 0;	// blocked beats make the RR deliberately uneven
 				}
 				if (lastBeatMsec != 0)
 				{
@@ -1425,6 +1518,40 @@ pulseProcessChild(void)
 			calculateVPCFreq();
 			set_pulse_rate(simmgr_shm->status.cardiac.rate);
 
+		}
+
+		// AV block: mode, ratio and the third-degree atrial timer
+		{
+			int newAvbMode = avbModeFor(simmgr_shm->status.cardiac.rhythm);
+			int newRatio = simmgr_shm->status.cardiac.avb_ratio;
+			if (newRatio < 2) newRatio = 2;
+			if (newRatio > 8) newRatio = 8;
+			if (newAvbMode != avbMode || newRatio != avbRatio)
+			{
+				pulseSema.lock();
+				avbMode = newAvbMode;
+				avbRatio = newRatio;
+				avbBeatIndex = 0;
+				set_pulse_rate(simmgr_shm->status.cardiac.rate);
+				pulseSema.unlock();
+			}
+			int newAtrialRate = (avbMode == 3) ? simmgr_shm->status.cardiac.atrial_rate : 0;
+			if (newAtrialRate < 0) newAtrialRate = 0;
+			if (newAtrialRate != currentAtrialRate)
+			{
+				currentAtrialRate = newAtrialRate;
+				if (newAtrialRate > 0)
+				{
+					ULONGLONG interval = (ULONGLONG)(60000 / newAtrialRate);
+					// start the P waves half a beat out of step with the QRS
+					nextAtrialTime = sim_monotonic_msec() + interval / 2;
+					atrialInterval = interval;
+				}
+				else
+				{
+					atrialInterval = 0;
+				}
+			}
 		}
 
 		if (strncmp(simmgr_shm->status.cardiac.rhythm, "afib", 4) == 0 &&

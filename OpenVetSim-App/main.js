@@ -215,6 +215,7 @@ function getLanIP() {
 // and app updates.
 const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'openvetsim-settings.json');
 const SETTINGS_DEFAULTS = {
+  patientMonitor: 'simple', // 'simple' = ECG, ETCO2, SpO2 | 'advanced' = + ABP and IBP2
   defibDisplay: 'ecg',      // 'ecg' = ECG only | 'monitor' = full student monitor
 };
 
@@ -238,31 +239,35 @@ function saveSetting(key, value) {
   }
 }
 
-// ─── Defibrillator display mode ───────────────────────────────────────────────
-// The defibrillator tablet (sim-remote/defib.html) reads its display mode from
-// sim-remote/defib-config.json, which the simulator serves like any other
-// sim-remote file. The tablet re-reads it every few seconds, so changing the
-// menu setting switches a tablet that is already connected.
+// ─── Display settings shared with the web pages ──────────────────────────────
+// The Simulator menu's Patient Monitor and Defibrillator Display settings reach
+// the pages through sim-remote/ovs-config.json. Both web servers can serve it:
+// the simulator's (port 40845: the defibrillator tablet) and PHP's (port 8081:
+// the instructor interface and student monitors, which also read it in PHP so
+// the first paint is already right). The pages re-read it every few seconds, so
+// a change applies to everything that is open, on any device.
 //
 // The file is generated - never edit or commit it. It is rewritten each time the
 // simulator starts, because initUserData() replaces the sim-remote folder on
 // every launch of the packaged app.
-function writeDefibConfig() {
-  const file = path.join(getHtmlPath(), 'sim-remote', 'defib-config.json');
+function writeDisplayConfig() {
+  const settings = loadSettings();
+  const file = path.join(getHtmlPath(), 'sim-remote', 'ovs-config.json');
   const config = {
-    display: loadSettings().defibDisplay === 'monitor' ? 'monitor' : 'ecg',
-    phpPort: PORT_PHP,        // where the tablet finds the student monitor page
+    patientMonitor: settings.patientMonitor === 'advanced' ? 'advanced' : 'simple',
+    defibDisplay:   settings.defibDisplay === 'monitor' ? 'monitor' : 'ecg',
+    phpPort: PORT_PHP,        // where the defibrillator finds the student monitor page
   };
   try {
     fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
   } catch (e) {
-    console.warn('[defib] could not write defib-config.json:', e.message);
+    console.warn('[settings] could not write ovs-config.json:', e.message);
   }
 }
 
-function setDefibDisplay(mode) {
-  saveSetting('defibDisplay', mode);
-  writeDefibConfig();
+function setDisplaySetting(key, value) {
+  saveSetting(key, value);
+  writeDisplayConfig();
 }
 
 // ─── Show a QR code window so a phone or tablet can open a page ──────────────
@@ -504,7 +509,7 @@ function startBinary() {
   if (simProcess) return;
 
   notifyState('starting');
-  writeDefibConfig();   // the web files are in place by now (see app.whenReady)
+  writeDisplayConfig(); // the web files are in place by now (see app.whenReady)
 
   // Kill any orphaned binary from a previous Electron session, then wait
   // briefly for its ports to be released before spawning a new instance.
@@ -835,6 +840,21 @@ function buildMenu() {
     { label: 'Restart', accelerator: 'CmdOrCtrl+Shift+R', click: restartBinary },
     { type: 'separator' },
     { label: 'Open in Browser', click: () => shell.openExternal(PHP_URL) },
+    {
+      // Simple: the original three waveforms (ECG, ETCO2, SpO2); the ABP and
+      // IBP2 buttons are hidden. Advanced: those buttons, and their waveforms
+      // whenever a line is placed.
+      label: 'Patient Monitor',
+      submenu: [
+        { label: 'Simple (ECG, ETCO₂, SpO₂)', type: 'radio',
+          checked: loadSettings().patientMonitor !== 'advanced',
+          click: () => setDisplaySetting('patientMonitor', 'simple') },
+        { label: 'Advanced (adds ABP and IBP2)', type: 'radio',
+          checked: loadSettings().patientMonitor === 'advanced',
+          click: () => setDisplaySetting('patientMonitor', 'advanced') },
+      ],
+    },
+    { type: 'separator' },
     { label: 'Connect Phone or Tablet…', click: showRemoteQR },
     { label: 'Connect Defibrillator…',   click: showDefibQR  },
     {
@@ -842,10 +862,10 @@ function buildMenu() {
       submenu: [
         { label: 'ECG Only',             type: 'radio',
           checked: loadSettings().defibDisplay !== 'monitor',
-          click: () => setDefibDisplay('ecg') },
+          click: () => setDisplaySetting('defibDisplay', 'ecg') },
         { label: 'Full Student Monitor', type: 'radio',
           checked: loadSettings().defibDisplay === 'monitor',
-          click: () => setDefibDisplay('monitor') },
+          click: () => setDisplaySetting('defibDisplay', 'monitor') },
       ],
     },
     { type: 'separator' },

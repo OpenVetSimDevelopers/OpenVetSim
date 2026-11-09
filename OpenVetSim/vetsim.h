@@ -88,6 +88,9 @@ struct cardiac
 	int left_femoral_pulse_strength;
 	unsigned int pulseCount;
 	unsigned int pulseCountVpc;
+	unsigned int pulseCountP;	// AV block: P waves with no QRS (blocked, or 3rd-degree atrial beats)
+	int avb_ratio;			// 2nd-degree AV block: N P waves per N-1 conducted (2 = 2:1, 3 = 3:2 ...)
+	int atrial_rate;		// 3rd-degree AV block: P wave rate, bpm (the set rate is the escape rate)
 
 	char heart_sound[STR_SIZE];
 	int heart_sound_volume;

@@ -395,6 +395,8 @@ resetAllParameters(void)
 	simmgr_shm->status.cardiac.nibp_freq = 0;
 	sprintf_s(simmgr_shm->status.cardiac.pwave, STR_SIZE, "%s", "none");
 	simmgr_shm->status.cardiac.pr_interval = 140; // Good definition at http://lifeinthefastlane.com/ecg-library/basics/pr-interval/
+	simmgr_shm->status.cardiac.avb_ratio = 3;		// 3:2
+	simmgr_shm->status.cardiac.atrial_rate = 120;
 	simmgr_shm->status.cardiac.qrs_interval = 85;
 	simmgr_shm->status.cardiac.bps_sys = 105;
 	simmgr_shm->status.cardiac.bps_dia = 70;
@@ -504,6 +506,8 @@ resetAllParameters(void)
 	simmgr_shm->instructor.cardiac.nibp_freq = -1;
 	sprintf_s(simmgr_shm->instructor.cardiac.pwave, STR_SIZE, "%s", "");
 	simmgr_shm->instructor.cardiac.pr_interval = -1;
+	simmgr_shm->instructor.cardiac.avb_ratio = -1;
+	simmgr_shm->instructor.cardiac.atrial_rate = -1;
 	simmgr_shm->instructor.cardiac.qrs_interval = -1;
 	simmgr_shm->instructor.cardiac.bps_sys = -1;
 	simmgr_shm->instructor.cardiac.bps_dia = -1;
@@ -1705,6 +1709,27 @@ scan_commands(void)
 			resetVpc();
 			break;
 		}
+	}
+	if (simmgr_shm->instructor.cardiac.avb_ratio >= 0)
+	{
+		if (simmgr_shm->instructor.cardiac.avb_ratio != simmgr_shm->status.cardiac.avb_ratio)
+		{
+			sprintf_s(buf, BUF_SIZE, "Setting: %s: %d:%d", "AV Block Ratio",
+				simmgr_shm->instructor.cardiac.avb_ratio, simmgr_shm->instructor.cardiac.avb_ratio - 1);
+			simlog_entry(buf);
+		}
+		simmgr_shm->status.cardiac.avb_ratio = simmgr_shm->instructor.cardiac.avb_ratio;
+		simmgr_shm->instructor.cardiac.avb_ratio = -1;
+	}
+	if (simmgr_shm->instructor.cardiac.atrial_rate >= 0)
+	{
+		if (simmgr_shm->instructor.cardiac.atrial_rate != simmgr_shm->status.cardiac.atrial_rate)
+		{
+			sprintf_s(buf, BUF_SIZE, "Setting: %s: %d", "Atrial Rate", simmgr_shm->instructor.cardiac.atrial_rate);
+			simlog_entry(buf);
+		}
+		simmgr_shm->status.cardiac.atrial_rate = simmgr_shm->instructor.cardiac.atrial_rate;
+		simmgr_shm->instructor.cardiac.atrial_rate = -1;
 	}
 	if (strlen(simmgr_shm->instructor.cardiac.vfib_amplitude) > 0)
 	{

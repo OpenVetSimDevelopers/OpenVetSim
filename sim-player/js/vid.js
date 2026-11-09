@@ -88,17 +88,19 @@ See gpl.html
 					}
 					
 					// have we detected a pause?
-					// get currently selected row
+					// If the selected row is the scenario pausing, skip the video
+					// ahead to where it resumed. Walk forward row by row - other
+					// rows (comments, settings changes) can be logged while paused -
+					// and stop at the end of the log if it never resumed.
 					var currentEventRowObj = $("#event-log table tr.selected");
-					if(currentEventRowObj.children('td.event').html().search('Pause') != -1) {
+					if(vid.isScenarioEvent(currentEventRowObj, 'Pause')) {
 						var nextEventRowObj = currentEventRowObj.next();
-						while(typeof nextEventRowObj != 'undefined') {
-							if(nextEventRowObj.children('td.event').html().search('Resume') != -1) {
+						while(nextEventRowObj.length > 0) {
+							if(vid.isScenarioEvent(nextEventRowObj, 'Resume')) {
 								vid.vidObj.currentTime = nextEventRowObj.data('ts');
 								break;
-							} else {
-								nextEventRowObj = currentEventRowObj.next();
 							}
+							nextEventRowObj = nextEventRowObj.next();
 						}
 					}
 					
@@ -138,6 +140,17 @@ See gpl.html
 			});
 		},
 		
+		// true if the row is the log's "Scenario: <what>" entry (Pause or Resume).
+		// Matches the whole entry, so a comment that merely mentions pausing
+		// doesn't count.
+		isScenarioEvent: function(rowObj, what) {
+			if(rowObj.length == 0) {
+				return false;
+			}
+			var text = $.trim(rowObj.children('td.event').text());
+			return text == 'Scenario: ' + what;
+		},
+
 		setPlayerControl: function() {
 			if(vid.vidObj == null) {
 				return;

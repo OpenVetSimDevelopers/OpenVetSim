@@ -48,6 +48,10 @@
           <select class="remote-select" id="sel-rhythm" onchange="remote.send({'set:cardiac:rhythm': this.value})">
             <option value="sinus">Sinus Rhythm</option>
             <option value="afib">Atrial Fibrillation</option>
+            <option value="avb1">AV Block 1&deg;</option>
+            <option value="avb2_mobitz1">AV Block 2&deg; Mobitz I</option>
+            <option value="avb2_mobitz2">AV Block 2&deg; Mobitz II</option>
+            <option value="avb3">AV Block 3&deg;</option>
             <option value="vtach1">V-Tach 1</option>
             <option value="vtach2">V-Tach 2</option>
             <option value="vtach3">R on T</option>
@@ -104,7 +108,7 @@
              interface. Advancing the position here is what floats the catheter
              during a session. -->
         <div class="select-row">
-          <div class="select-label">PA Catheter</div>
+          <div class="select-label">IBP2 Catheter</div>
           <select class="remote-select" id="sel-pacplaced" onchange="remote.send({'set:cardiac:pac_placed': this.value})">
             <option value="0">Not placed</option>
             <option value="1">Placed</option>

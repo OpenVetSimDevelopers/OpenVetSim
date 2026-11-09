@@ -113,7 +113,7 @@
                 <left>110</left>
             </control>
             <control>
-                <title>PA Cath</title>
+                <title>IBP2</title>
                 <id>button-pac</id>
                 <top>350</top>
                 <left>165</left>

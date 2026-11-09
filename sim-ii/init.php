@@ -267,4 +267,20 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 //	require_once(SERVER_CLASSES . "mail.class.php");
 
 	
+	/*
+	 * Simulator > Patient Monitor in the app: 'simple' (ECG, ETCO2 and SpO2 -
+	 * the monitor as it always was) or 'advanced' (adds the ABP and IBP2 buttons
+	 * and their waveforms). The app writes it to sim-remote/ovs-config.json, and
+	 * the pages put it on <body> so they paint in the right mode; controls.js
+	 * (controls.monitorMode) follows the file from then on. With no app, and so
+	 * no file, everything is shown.
+	 */
+	function ovsPatientMonitorMode() {
+		$file = dirname(__FILE__) . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR
+		      . 'sim-remote' . DIRECTORY_SEPARATOR . 'ovs-config.json';
+		$cfg = is_readable($file) ? json_decode(file_get_contents($file), true) : null;
+		return ( is_array($cfg) && isset($cfg['patientMonitor']) && $cfg['patientMonitor'] === 'simple' )
+			? 'simple' : 'advanced';
+	}
+
 ?>
